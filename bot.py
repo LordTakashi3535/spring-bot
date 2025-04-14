@@ -32,8 +32,8 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text.strip()
     data = worksheet.get_all_records()
     for row in data:
-        if str(row['Номер']) == query:
-            response = f"Номер: {row['Номер']}\nПолка: {row['Полка']}\nТип: {row['Тип']}\nСтатус: {row['Статус']}"
+        if str(row['Numer']) == query:
+            response = f"Номер: {row['Numer']}\nПолка: {row['Połka ']}\nТип: {row['Тип']}\nСтатус: {row['Статус']}"
             await update.message.reply_text(response)
             return
     await update.message.reply_text("Пружина не найдена.")
