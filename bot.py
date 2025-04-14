@@ -22,7 +22,7 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scopes=scop
 client = gspread.authorize(creds)
 
 # Подключаемся к таблице
-sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1-PYvDusEahk2YIEZf4kDUtw4g-uPV75zk6rfb_RJkn-s8").sheet1
+sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1-PYvDusEahk2EYI2f4kDtu4uQ-pV756kz6fb_RXn-s8").sheet1
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
