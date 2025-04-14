@@ -35,7 +35,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for row in data:
         if str(row["Numer"]) == query:
-            response = f"Номер: {row['Numer']}\nПолка: {row['Polka']}"
+            response = f"Numer: {row['Numer']}\nPolka: {row['Polka']}"
             await update.message.reply_text(response)
             return
 
