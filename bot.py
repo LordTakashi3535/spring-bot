@@ -13,7 +13,12 @@ scope = [
     "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/drive"
 ]
-creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+import json
+import os
+from oauth2client.service_account import ServiceAccountCredentials
+
+creds_dict = json.loads(os.environ['GOOGLE_CREDS_JSON'])
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scopes=SCOPES)
 client = gspread.authorize(creds)
 
 # ВСТАВЬ ТУТ ССЫЛКУ НА СВОЮ ТАБЛИЦУ:
