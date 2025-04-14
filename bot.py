@@ -1,14 +1,25 @@
 import logging
 import os
-import gspread
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from oauth2client.service_account import ServiceAccountCredentials
 import json
+import gspread
+import asyncio
 
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
+from oauth2client.service_account import ServiceAccountCredentials
 
-# СКОУПЫ
+# Логирование
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+
+# Скоупы
 scope = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/spreadsheets",
@@ -16,13 +27,13 @@ scope = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Загрузка кредов
+# Авторизация Google Sheets
 creds_dict = json.loads(os.environ["GOOGLE_CREDS_JSON"])
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scopes=scope)
 client = gspread.authorize(creds)
-
-# Подключаемся к таблице
-sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1-PYvDusEahk2EYI2f4kDtu4uQ-pV756kz6fb_RXn-s8").sheet1
+sheet = client.open_by_url(
+    "https://docs.google.com/spreadsheets/d/1-PYvDusEahk2EYI2f4kDtu4uQ-pV756kz6fb_RXn-s8"
+).sheet1
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -41,15 +52,26 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("Пружина не найдена.")
 
-# Основной запуск
-def main():
+# Запуск через вебхук (для Render)
+async def main():
     bot_token = os.getenv("BOT_TOKEN")
     app = ApplicationBuilder().token(bot_token).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
 
-    app.run_polling()
+    # Адрес твоего бота на Render
+    webhook_url = "https://spring-bot-pvta.onrender.com"
+
+    await app.initialize()
+    await app.start()
+    await app.bot.set_webhook(webhook_url)
+    await app.updater.start_webhook(
+        listen="0.0.0.0",
+        port=10000,
+        webhook_url=webhook_url
+    )
+    await app.updater.idle()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
