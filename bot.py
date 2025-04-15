@@ -12,7 +12,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials  # <- новое
 
 # Логирование
 logging.basicConfig(
@@ -27,9 +27,12 @@ scope = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Авторизация Google Sheets
-creds = ServiceAccountCredentials.from_json_keyfile_name("src/creds.json", scopes=scope)
+# Авторизация Google Sheets через переменную окружения
+service_account_info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
+creds = Credentials.from_service_account_info(service_account_info, scopes=scope)
 client = gspread.authorize(creds)
+
+# Открытие таблицы
 sheet = client.open_by_url(
     "https://docs.google.com/spreadsheets/d/1-PYvDusEahk2EYI2f4kDtu4uQ-pV756kz6fb_RXn-s8"
 ).sheet1
@@ -59,7 +62,6 @@ async def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
 
-    # Адрес твоего бота на Render
     webhook_url = "https://spring-bot-pvta.onrender.com"
 
     await app.initialize()
