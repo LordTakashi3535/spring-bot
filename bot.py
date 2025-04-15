@@ -2,7 +2,6 @@ import logging
 import os
 import json
 import gspread
-import asyncio
 import base64
 
 from telegram import Update
@@ -71,5 +70,15 @@ async def main():
     await app.run_polling()
 
 if __name__ == "__main__":
+    # Используем существующий цикл событий
+    import nest_asyncio
+    nest_asyncio.apply()
+
     # Запускаем основной асинхронный цикл
-    asyncio.run(main())
+    app = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
+
+    # Запускаем бота с polling
+    app.run_polling()
