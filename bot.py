@@ -59,7 +59,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Пружина не найдена.")
 
 # Запуск через polling
-async def main():
+def main():
     bot_token = os.getenv("BOT_TOKEN")
     app = ApplicationBuilder().token(bot_token).build()
 
@@ -67,18 +67,8 @@ async def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
 
     # Запуск бота с polling
-    await app.run_polling()
+    app.run_polling()
 
 if __name__ == "__main__":
-    # Используем существующий цикл событий
-    import nest_asyncio
-    nest_asyncio.apply()
-
-    # Запускаем основной асинхронный цикл
-    app = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
-
-    # Запускаем бота с polling
-    app.run_polling()
+    # Запуск без asyncio.run() (используем run_polling напрямую)
+    main()
