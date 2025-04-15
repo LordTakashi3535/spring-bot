@@ -81,27 +81,21 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("Неверный формат данных. Попробуйте снова.")
 
-    elif action == "delete":
-        # Логика удаления пружины
+    elif action == "delete" or action == "change_shelf":
+        # Логика поиска пружины
         data = sheet.get_all_records()
         for row in data:
             if str(row["Numer"]) == user_input:
-                sheet.delete_rows(data.index(row) + 2)
-                await update.message.reply_text(f"Пружина {user_input} удалена.")
+                # Создание кнопок для удаления или изменения полки
+                keyboard = [
+                    [InlineKeyboardButton("Удалить", callback_data=f"delete_{user_input}")],
+                    [InlineKeyboardButton("Поменять полку", callback_data=f"change_shelf_{user_input}")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(f"Пружина {user_input} найдена. Что хотите сделать?", reply_markup=reply_markup)
                 return
+        
         await update.message.reply_text(f"Пружина с номером {user_input} не найдена.")
-
-    elif action == "change_shelf":
-        # Логика изменения полки
-        data = sheet.get_all_records()
-        for row in data:
-            if str(row["Numer"]) == user_input.split()[0]:
-                new_shelf = user_input.split()[1]
-                row_index = data.index(row) + 2
-                sheet.update_cell(row_index, 2, new_shelf)
-                await update.message.reply_text(f"Пружина {user_input.split()[0]} теперь на полке {new_shelf}.")
-                return
-        await update.message.reply_text(f"Пружина с номером {user_input.split()[0]} не найдена.")
 
     # Сбросить действие после завершения
     context.user_data["action"] = None
@@ -120,6 +114,28 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "change_shelf":
         context.user_data["action"] = "change_shelf"
         await change_shelf(update, context)
+    elif data.startswith("delete_"):
+        # Удаление пружины
+        spring_number = data.split("_")[1]
+        data = sheet.get_all_records()
+        for row in data:
+            if str(row["Numer"]) == spring_number:
+                sheet.delete_rows(data.index(row) + 2)
+                await query.message.reply_text(f"Пружина {spring_number} удалена.")
+                return
+        await query.message.reply_text(f"Пружина с номером {spring_number} не найдена.")
+    elif data.startswith("change_shelf_"):
+        # Изменение полки
+        spring_number = data.split("_")[2]
+        new_shelf = "НоваяПолка"  # Пример новой полки, это можно реализовать через следующий ввод
+        data = sheet.get_all_records()
+        for row in data:
+            if str(row["Numer"]) == spring_number:
+                row_index = data.index(row) + 2
+                sheet.update_cell(row_index, 2, new_shelf)
+                await query.message.reply_text(f"Пружина {spring_number} теперь на полке {new_shelf}.")
+                return
+        await query.message.reply_text(f"Пружина с номером {spring_number} не найдена.")
 
 # Запуск через polling
 def main():
