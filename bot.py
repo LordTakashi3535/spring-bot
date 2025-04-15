@@ -44,11 +44,11 @@ sheet = client.open_by_url(
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Привет! Используй команды:\n"
-        "+номер, полка — добавить пружину\n"
-        "-номер — удалить пружину\n"
-        "=номер, новая_полка — изменить полку\n"
-        "номер — узнать где находится пружина"
+        "Cześć! Użyj komend:\n"
+        "+numer, półka — dodaj sprężynę\n"
+        "-numer — usuń sprężynę\n"
+        "=numer, nowa_półka — zmień półkę\n"
+        "numer — sprawdź gdzie znajduje się sprężyna"
     )
 
 # Обработка пользовательского ввода
@@ -62,7 +62,7 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             content = text[1:].strip()
             number, shelf = [x.strip() for x in content.split(",")]
             sheet.append_row([number, shelf])
-            await update.message.reply_text(f"✅ Пружина {number} добавлена на полку {shelf}.")
+            await update.message.reply_text(f"✅ Sprężyna {number} dodana na półkę {shelf}.")
 
         elif text.startswith("-"):
             # Удаление пружины
@@ -70,9 +70,9 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for idx, row in enumerate(data, start=2):
                 if str(row["Numer"]) == number:
                     sheet.delete_rows(idx)
-                    await update.message.reply_text(f"❌ Пружина {number} удалена.")
+                    await update.message.reply_text(f"❌ Sprężyna {number} została usunięta.")
                     return
-            await update.message.reply_text("⚠️ Пружина не найдена.")
+            await update.message.reply_text("⚠️ Sprężyna nie znaleziona.")
 
         elif text.startswith("="):
             # Изменение полки
@@ -81,22 +81,22 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for idx, row in enumerate(data, start=2):
                 if str(row["Numer"]) == number:
                     sheet.update_cell(idx, 2, new_shelf)
-                    await update.message.reply_text(f"🔁 Полка для пружины {number} обновлена на {new_shelf}.")
+                    await update.message.reply_text(f"🔁 Półka dla sprężyny {number} została zmieniona na {new_shelf}.")
                     return
-            await update.message.reply_text("⚠️ Пружина не найдена.")
+            await update.message.reply_text("⚠️ Sprężyna nie znaleziona.")
 
         else:
             # Поиск пружины
             for row in data:
                 if str(row["Numer"]) == text:
-                    response = f"🔍 Найдено:\nNumer: {row['Numer']}\nPolka: {row['Polka']}"
+                    response = f"🔍 Znaleziono:\nNumer: {row['Numer']}\nPółka: {row['Polka']}"
                     await update.message.reply_text(response)
                     return
-            await update.message.reply_text("⚠️ Пружина не найдена.")
+            await update.message.reply_text("⚠️ Sprężyna nie znaleziona.")
 
     except Exception as e:
-        logging.error(f"Ошибка при обработке команды: {e}")
-        await update.message.reply_text("❌ Ошибка обработки. Убедись, что формат команды верный.")
+        logging.error(f"Błąd przy przetwarzaniu komendy: {e}")
+        await update.message.reply_text("❌ Błąd przetwarzania. Upewnij się, że format komendy jest poprawny.")
 
 # Запуск через polling
 def main():
