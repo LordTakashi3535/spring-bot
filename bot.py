@@ -44,90 +44,50 @@ sheet = client.open_by_url(
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("Добавить пружину", callback_data='add')],
-        [InlineKeyboardButton("Удалить пружину", callback_data='delete')],
-        [InlineKeyboardButton("Изменить полку", callback_data='change_shelf')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Привет! Выберите действие:", reply_markup=reply_markup)
+    await update.message.reply_text("Привет! Введи номер пружины, и я покажу на какой она полке.")
 
-# Добавление пружины
-async def add_spring(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    await update.callback_query.message.reply_text("Введите данные для добавления пружины (формат: Номер, Полка)")
+# Поиск пружины
+async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.message.text.strip()
+    data = sheet.get_all_records()
 
-# Удаление пружины
-async def delete_spring(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    await update.callback_query.message.reply_text("Введите номер пружины для удаления")
+    for row in data:
+        if str(row["Numer"]) == query:
+            response = f"Найдено: {row['Numer']}\nПолка: {row['Polka']}"
+            
+            # Создаем кнопки для удаления или изменения полки
+            keyboard = [
+                [InlineKeyboardButton("Удалить", callback_data=f"delete_{query}")],
+                [InlineKeyboardButton("Поменять полку", callback_data=f"change_shelf_{query}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Отправляем сообщение с кнопками
+            await update.message.reply_text(response, reply_markup=reply_markup)
+            return
 
-# Изменение полки
-async def change_shelf(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    await update.callback_query.message.reply_text("Введите номер пружины, для которой хотите изменить полку")
-
-# Обработчик ответов пользователя на действия с пружинами
-async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_input = update.message.text.strip()
-    action = context.user_data.get("action")
-
-    if action == "add":
-        # Логика добавления пружины
-        try:
-            numer, polka = user_input.split(",")
-            sheet.append_row([numer.strip(), polka.strip()])
-            await update.message.reply_text(f"Пружина {numer.strip()} добавлена на полку {polka.strip()}.")
-        except ValueError:
-            await update.message.reply_text("Неверный формат данных. Попробуйте снова.")
-
-    elif action == "delete" or action == "change_shelf":
-        # Логика поиска пружины
-        data = sheet.get_all_records()
-        for row in data:
-            if str(row["Numer"]) == user_input:
-                # Создание кнопок для удаления или изменения полки
-                keyboard = [
-                    [InlineKeyboardButton("Удалить", callback_data=f"delete_{user_input}")],
-                    [InlineKeyboardButton("Поменять полку", callback_data=f"change_shelf_{user_input}")]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.message.reply_text(f"Пружина {user_input} найдена. Что хотите сделать?", reply_markup=reply_markup)
-                return
-        
-        await update.message.reply_text(f"Пружина с номером {user_input} не найдена.")
-
-    # Сбросить действие после завершения
-    context.user_data["action"] = None
+    await update.message.reply_text("Пружина не найдена.")
 
 # Обработчик для кнопок
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
 
-    if data == "add":
-        context.user_data["action"] = "add"
-        await add_spring(update, context)
-    elif data == "delete":
-        context.user_data["action"] = "delete"
-        await delete_spring(update, context)
-    elif data == "change_shelf":
-        context.user_data["action"] = "change_shelf"
-        await change_shelf(update, context)
-    elif data.startswith("delete_"):
-        # Удаление пружины
+    if data.startswith("delete_"):
+        # Логика удаления пружины
         spring_number = data.split("_")[1]
         data = sheet.get_all_records()
         for row in data:
             if str(row["Numer"]) == spring_number:
-                sheet.delete_rows(data.index(row) + 2)
+                sheet.delete_rows(data.index(row) + 2)  # Удаление строки из таблицы
                 await query.message.reply_text(f"Пружина {spring_number} удалена.")
                 return
         await query.message.reply_text(f"Пружина с номером {spring_number} не найдена.")
+
     elif data.startswith("change_shelf_"):
-        # Изменение полки
+        # Логика изменения полки
         spring_number = data.split("_")[2]
-        new_shelf = "НоваяПолка"  # Пример новой полки, это можно реализовать через следующий ввод
+        new_shelf = "НоваяПолка"  # Пример новой полки, можно сделать ввод от пользователя
         data = sheet.get_all_records()
         for row in data:
             if str(row["Numer"]) == spring_number:
@@ -143,12 +103,12 @@ def main():
     app = ApplicationBuilder().token(bot_token).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
     app.add_handler(CallbackQueryHandler(button))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
 
     # Запуск бота с polling
     app.run_polling()
 
 if __name__ == "__main__":
+    # Запуск без asyncio.run() (используем run_polling напрямую)
     main()
-
