@@ -28,8 +28,7 @@ scope = [
 ]
 
 # Авторизация Google Sheets
-creds_dict = json.loads(os.environ["GOOGLE_CREDS_JSON"])
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scopes=scope)
+creds = ServiceAccountCredentials.from_json_keyfile_name("src/creds.json", scopes=scope)
 client = gspread.authorize(creds)
 sheet = client.open_by_url(
     "https://docs.google.com/spreadsheets/d/1-PYvDusEahk2EYI2f4kDtu4uQ-pV756kz6fb_RXn-s8"
