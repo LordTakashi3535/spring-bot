@@ -71,5 +71,5 @@ async def main():
     await app.run_polling()
 
 if __name__ == "__main__":
-    # Запускаем бота без создания нового цикла событий
-    app.run_polling()
+    # Запускаем основной асинхронный цикл
+    asyncio.run(main())
