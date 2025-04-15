@@ -3,6 +3,7 @@ import os
 import json
 import gspread
 import asyncio
+import base64
 
 from telegram import Update
 from telegram.ext import (
@@ -12,7 +13,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from google.oauth2.service_account import Credentials  # <- новое
+from google.oauth2.service_account import Credentials
 
 # Логирование
 logging.basicConfig(
@@ -27,8 +28,10 @@ scope = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Авторизация Google Sheets через переменную окружения
-service_account_info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
+# Авторизация Google Sheets через переменную окружения (Base64)
+encoded_creds = os.environ["GOOGLE_CREDENTIALS_B64"]
+decoded_creds = base64.b64decode(encoded_creds).decode("utf-8")
+service_account_info = json.loads(decoded_creds)
 creds = Credentials.from_service_account_info(service_account_info, scopes=scope)
 client = gspread.authorize(creds)
 
