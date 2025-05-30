@@ -1,12 +1,12 @@
 import logging
 import os
 import json
-import base64
 import gspread
+import base64
 
 from telegram import (
-    Update,
-    InlineKeyboardButton,
+    Update, 
+    InlineKeyboardButton, 
     InlineKeyboardMarkup
 )
 from telegram.ext import (
@@ -24,7 +24,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 
-# Скоупы для Google API
+# Скоупы для Google Sheets
 scope = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/spreadsheets",
@@ -32,7 +32,7 @@ scope = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Декодируем base64 переменную с ключами
+# Декодируем base64 переменную в JSON
 encoded_creds = os.environ["GOOGLE_CREDENTIALS_B64"]
 decoded_creds = base64.b64decode(encoded_creds).decode("utf-8")
 service_account_info = json.loads(decoded_creds)
@@ -41,26 +41,30 @@ service_account_info = json.loads(decoded_creds)
 creds = Credentials.from_service_account_info(service_account_info, scopes=scope)
 client = gspread.authorize(creds)
 
-# Открываем таблицу и выбираем первый лист
+# Открытие таблицы
 sheet = client.open_by_url(
     "https://docs.google.com/spreadsheets/d/1-PYvDusEahk2EYI2f4kDtu4uQ-pV756kz6fb_RXn-s8"
 ).sheet1
 
-# Кнопки полок (в столбцах)
-SHELF_BUTTONS = [
-    ["a1", "a2", "a3", "a4", "a5", "a6", "a7"],
-    ["b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8"],
-    ["c1", "c2", "c3"]
+# Клавиатура для выбора полки (столбцами сверху вниз)
+SHELVES = [
+    ["A1", "B1", "C1"],
+    ["A2", "B2", "C2"],
+    ["A3", "B3", "C3"],
+    ["A4", "B4"],
+    ["A5", "B5"],
+    ["A6", "B6"],
+    ["A7", "B7"],
+    [        "B8"]
 ]
 
 def shelves_keyboard():
     keyboard = []
-    for row in SHELF_BUTTONS:
+    for row in SHELVES:
         buttons = [InlineKeyboardButton(shelf.upper(), callback_data=f"move_shelf:{shelf}") for shelf in row]
         keyboard.append(buttons)
-    keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
+    keyboard.append([InlineKeyboardButton("Отмена", callback_data="cancel")])
     return InlineKeyboardMarkup(keyboard)
-
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -72,8 +76,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "numer — sprawdź gdzie znajduje się sprężyna"
     )
 
+# Функция отправки информации о пружине с кнопками Удалить и Редактировать
+async def send_spring_info(update, context, number, shelf):
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Удалить", callback_data=f"delete:{number}"),
+            InlineKeyboardButton("Редактировать", callback_data=f"edit:{number}")
+        ]
+    ])
+    text = f"🔍 Znaleziono:\nNumer: {number}\nPółka: {shelf}"
+    if update.message:
+        await update.message.reply_text(text, reply_markup=keyboard)
+    else:
+        # если вызывается из callback_query
+        await update.callback_query.edit_message_text(text, reply_markup=keyboard)
 
-# Обработка текстовых сообщений
+# Обработка сообщений пользователя
 async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     data = sheet.get_all_records()
@@ -90,35 +108,30 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Удаление пружины
             number = text[1:].strip()
             for idx, row in enumerate(data, start=2):
-                if str(row.get("Numer")) == number:
+                if str(row["Numer"]) == number:
                     sheet.delete_rows(idx)
                     await update.message.reply_text(f"❌ Sprężyna {number} została usunięta.")
                     return
             await update.message.reply_text("⚠️ Sprężyna nie znaleziona.")
 
         elif text.startswith("="):
-            # Изменение полки
+            # Изменение полки через текст
             content = text[1:].strip()
             number, new_shelf = [x.strip() for x in content.split(",")]
             for idx, row in enumerate(data, start=2):
-                if str(row.get("Numer")) == number:
+                if str(row["Numer"]) == number:
                     sheet.update_cell(idx, 2, new_shelf)
                     await update.message.reply_text(f"🔁 Półka dla sprężyny {number} została zmieniona na {new_shelf}.")
                     return
             await update.message.reply_text("⚠️ Sprężyna nie znaleziona.")
 
         else:
-            # Поиск пружины и показ кнопок
-            for idx, row in enumerate(data, start=2):
-                if str(row.get("Numer")) == text:
-                    context.user_data["selected_spring"] = {"number": row["Numer"], "row": idx}
-                    shelf = row.get("Polka", "—")
-                    response_text = f"🔍 Найдена пружина:\nНомер: {row['Numer']}\nПолка: {shelf}"
-                    keyboard = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("Удалить", callback_data="delete_spring")],
-                        [InlineKeyboardButton("Редактировать", callback_data="edit_spring")]
-                    ])
-                    await update.message.reply_text(response_text, reply_markup=keyboard)
+            # Поиск пружины и вывод с кнопками
+            for row in data:
+                if str(row["Numer"]) == text:
+                    await send_spring_info(update, context, row["Numer"], row["Polka"])
+                    # Запоминаем номер для последующих действий редактирования/удаления
+                    context.user_data["current_spring"] = row["Numer"]
                     return
             await update.message.reply_text("⚠️ Sprężyna nie znaleziona.")
 
@@ -126,53 +139,58 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Błąd przy przetwarzaniu komendy: {e}")
         await update.message.reply_text("❌ Błąd przetwarzania. Upewnij się, że format komendy jest poprawny.")
 
-
-# Обработка нажатий на кнопки
+# Обработка callback запросов (нажатий кнопок)
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
 
-    if data == "delete_spring":
-        spring = context.user_data.get("selected_spring")
-        if not spring:
-            await query.edit_message_text("⚠️ Ошибка: Нет выбранной пружины.")
-            return
-        try:
-            sheet.delete_rows(spring["row"])
-            await query.edit_message_text(f"❌ Пружина {spring['number']} удалена.")
-            context.user_data.pop("selected_spring", None)
-        except Exception as e:
-            await query.edit_message_text(f"Ошибка удаления: {e}")
+    if data == "cancel":
+        await query.edit_message_text("Действие отменено.")
+        context.user_data.pop("edit_number", None)
+        context.user_data.pop("current_spring", None)
+        return
 
-    elif data == "edit_spring":
-        spring = context.user_data.get("selected_spring")
-        if not spring:
-            await query.edit_message_text("⚠️ Ошибка: Нет выбранной пружины.")
-            return
+    elif data.startswith("delete:"):
+        number_to_delete = data.split(":", 1)[1]
+        data_sheet = sheet.get_all_records()
+        for idx, row in enumerate(data_sheet, start=2):
+            if str(row["Numer"]) == number_to_delete:
+                sheet.delete_rows(idx)
+                await query.edit_message_text(f"❌ Sprężyna {number_to_delete} została usunięta.")
+                context.user_data.pop("current_spring", None)
+                return
+        await query.edit_message_text("⚠️ Sprężyna nie znaleziona.")
+
+    elif data.startswith("edit:"):
+        number_to_edit = data.split(":", 1)[1]
+        context.user_data["edit_number"] = number_to_edit
+        # Показать клавиатуру с выбором полки
         await query.edit_message_text(
-            "Выберите новую полку для пружины:",
+            f"Выберите новую полку для пружины {number_to_edit}:",
             reply_markup=shelves_keyboard()
         )
 
     elif data.startswith("move_shelf:"):
         new_shelf = data.split(":", 1)[1]
-        spring = context.user_data.get("selected_spring")
-        if not spring:
-            await query.edit_message_text("⚠️ Ошибка: Нет выбранной пружины.")
+        number_to_edit = context.user_data.get("edit_number")
+        if not number_to_edit:
+            await query.edit_message_text("Ошибка: не выбран номер пружины для редактирования.")
             return
-        try:
-            sheet.update_cell(spring["row"], 2, new_shelf)
-            await query.edit_message_text(f"🔁 Пружина {spring['number']} перемещена на полку {new_shelf.upper()}.")
-            context.user_data.pop("selected_spring", None)
-        except Exception as e:
-            await query.edit_message_text(f"Ошибка обновления: {e}")
 
-    elif data == "cancel":
-        context.user_data.pop("selected_spring", None)
-        await query.edit_message_text("Действие отменено.")
+        data_sheet = sheet.get_all_records()
+        for idx, row in enumerate(data_sheet, start=2):
+            if str(row["Numer"]) == number_to_edit:
+                sheet.update_cell(idx, 2, new_shelf)
+                await query.edit_message_text(
+                    f"🔁 Пружина {number_to_edit} перемещена на полку {new_shelf}."
+                )
+                context.user_data.pop("edit_number", None)
+                context.user_data.pop("current_spring", None)
+                return
+        await query.edit_message_text("⚠️ Sprężyna nie znaleziona.")
 
-
+# Запуск бота
 def main():
     bot_token = os.getenv("BOT_TOKEN")
     app = ApplicationBuilder().token(bot_token).build()
@@ -182,7 +200,6 @@ def main():
     app.add_handler(CallbackQueryHandler(callback_handler))
 
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
