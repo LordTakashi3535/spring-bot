@@ -51,24 +51,30 @@ def cancel_keyboard():
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 def shelves_keyboard():
-    # Столбцы полок
-    shelves_columns = [
-        ["a1", "a2", "a3", "a4", "a5", "a6", "a7"],
-        ["b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8"],
-        ["c1", "c2", "c3"]
-    ]
+    a = ["a1", "a2", "a3", "a4", "a5", "a6", "a7"]
+    b = ["b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8"]
+    c = ["c1", "c2", "c3"]
 
-    # Максимальное количество строк
-    max_rows = max(len(col) for col in shelves_columns)
-
-    # Собираем клавиатуру по строкам
+    max_len = max(len(a), len(b), len(c))
     keyboard = []
-    for i in range(max_rows):
+
+    for i in range(max_len):
         row = []
-        for col in shelves_columns:
-            if i < len(col):
-                shelf = col[i]
-                row.append(InlineKeyboardButton(shelf.upper(), callback_data=f"move_shelf:{shelf}"))
+        if i < len(a):
+            row.append(InlineKeyboardButton(a[i].upper(), callback_data=f"move_shelf:{a[i]}"))
+        else:
+            row.append(InlineKeyboardButton(" ", callback_data="noop"))  # Пустая заглушка
+
+        if i < len(b):
+            row.append(InlineKeyboardButton(b[i].upper(), callback_data=f"move_shelf:{b[i]}"))
+        else:
+            row.append(InlineKeyboardButton(" ", callback_data="noop"))
+
+        if i < len(c):
+            row.append(InlineKeyboardButton(c[i].upper(), callback_data=f"move_shelf:{c[i]}"))
+        else:
+            row.append(InlineKeyboardButton(" ", callback_data="noop"))
+
         keyboard.append(row)
 
     return InlineKeyboardMarkup(keyboard)
