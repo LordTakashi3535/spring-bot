@@ -48,22 +48,29 @@ def cancel_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("Отмена", callback_data="cancel")]])
 
 # Клавиатура полок (столбцами вниз)
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
 def shelves_keyboard():
+    # Столбцы полок
     shelves_columns = [
-        ["a1", "b1", "c1"],
-        ["a2", "b2", "c2"],
-        ["a3", "b3", "c3"],
-        ["a4", "b4"],
-        ["a5", "b5"],
-        ["a6", "b6"],
-        ["a7", "b7"],
-        [      "b8"],
+        ["a1", "a2", "a3", "a4", "a5", "a6", "a7"],
+        ["b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8"],
+        ["c1", "c2", "c3"]
     ]
 
+    # Максимальное количество строк
+    max_rows = max(len(col) for col in shelves_columns)
+
+    # Собираем клавиатуру по строкам
     keyboard = []
-    for column in shelves_columns:
-        row_buttons = [InlineKeyboardButton(shelf.upper(), callback_data=f"move_shelf:{shelf}") for shelf in column]
-        keyboard.append(row_buttons)
+    for i in range(max_rows):
+        row = []
+        for col in shelves_columns:
+            if i < len(col):
+                shelf = col[i]
+                row.append(InlineKeyboardButton(shelf.upper(), callback_data=f"move_shelf:{shelf}"))
+        keyboard.append(row)
+
     return InlineKeyboardMarkup(keyboard)
 
 # Команда /start
@@ -183,8 +190,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         shelf = context.user_data.get("spring_shelf")
         if number and shelf:
             sheet.append_row([number, shelf])
-            await query.edit_message_text(f"✅ Пружина {number} успешно добавлена на полку {shelf}.")
-            context.user_data.clear()
+            # Сохраняем режим добавления, очищаем только временные поля
+            context.user_data.pop("spring_number", None)
+            context.user_data.pop("spring_shelf", None)
+            await query.edit_message_text(
+                f"✅ Пружина {number} успешно добавлена на полку {shelf}.\n\n"
+                "Введите следующий номер пружины или нажмите 'Отмена' для выхода.",
+                reply_markup=cancel_keyboard()
+            )
         else:
             await query.edit_message_text("Ошибка: отсутствуют данные для добавления.")
         return
