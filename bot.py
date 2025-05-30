@@ -38,7 +38,7 @@ service_account_info = json.loads(decoded_creds)
 creds = Credentials.from_service_account_info(service_account_info, scopes=scope)
 client = gspread.authorize(creds)
 
-# Открываем таблицу (замени URL на свою)
+# Открываем таблицу
 sheet = client.open_by_url(
     "https://docs.google.com/spreadsheets/d/1-PYvDusEahk2EYI2f4kDtu4uQ-pV756kz6fb_RXn-s8"
 ).sheet1
@@ -86,7 +86,6 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     data = sheet.get_all_records()
 
-    # Режим добавления пружины (ждём ввод номера)
     if context.user_data.get("adding_spring"):
         if "spring_number" not in context.user_data:
             if text.lower() == "отмена":
@@ -100,7 +99,6 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         else:
-            # Здесь ничего не ждём, дальше управление через callback кнопки
             return
 
     try:
@@ -132,7 +130,6 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             for row in data:
                 if str(row["Numer"]) == text:
-                    # Показываем данные с кнопками Удалить и Редактировать
                     keyboard = InlineKeyboardMarkup([
                         [
                             InlineKeyboardButton("Удалить", callback_data=f"delete:{text}"),
@@ -143,13 +140,13 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     response = f"🔍 Znaleziono:\nNumer: {row['Numer']}\nPółka: {row['Polka']}"
                     await update.message.reply_text(response, reply_markup=keyboard)
                     return
-            await update.message.reply_text("⚠️ Sprężyna nie znaleziona.")
+            await update.message.reply_text("⚠️ Sprężyna не znaleziona.")
 
     except Exception as e:
         logger.error(f"Błąd przy przetwarzaniu komendy: {e}")
-        await update.message.reply_text("❌ Błąd przetwarzania. Upewnij się, że format komendy jest poprawny.")
+        await update.message.reply_text("❌ Błąd przetwarzania. Убедитесь, что формат команды правильный.")
 
-# Обработка нажатий кнопок
+# Обработка кнопок
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -160,14 +157,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Действие отменено.")
         return
 
-    # Запуск режима добавления пружины
     if data == "add_spring":
         context.user_data.clear()
         context.user_data["adding_spring"] = True
         await query.edit_message_text("Введите номер пружины или напишите 'Отмена' для выхода.", reply_markup=cancel_keyboard())
         return
 
-    # Выбор полки в режиме добавления
     if context.user_data.get("adding_spring") and data.startswith("move_shelf:"):
         shelf = data.split(":", 1)[1]
         context.user_data["spring_shelf"] = shelf
@@ -183,7 +178,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Подтверждение добавления
     if data == "confirm_add" and context.user_data.get("adding_spring"):
         number = context.user_data.get("spring_number")
         shelf = context.user_data.get("spring_shelf")
@@ -195,7 +189,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("Ошибка: отсутствуют данные для добавления.")
         return
 
-    # Удаление пружины по кнопке
     if data.startswith("delete:"):
         number = data.split(":", 1)[1]
         records = sheet.get_all_records()
@@ -207,7 +200,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⚠️ Пружина не найдена.")
         return
 
-    # Редактирование полки (выбор новой полки)
     if data.startswith("edit:"):
         number = data.split(":", 1)[1]
         context.user_data["editing_spring"] = number
@@ -217,7 +209,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Выбор полки при редактировании
     if context.user_data.get("editing_spring") and data.startswith("move_shelf:"):
         shelf = data.split(":", 1)[1]
         number = context.user_data.get("editing_spring")
@@ -232,11 +223,22 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         return
 
-# Основная функция запуска бота
+# ✅ Главная функция
 def main():
     bot_token = os.getenv("BOT_TOKEN")
+    if not bot_token:
+        logger.error("❌ BOT_TOKEN не установлен!")
+        return
+
     app = ApplicationBuilder().token(bot_token).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
-    app.add
+    app.add_handler(CallbackQueryHandler(callback_handler))
+
+    logger.info("🤖 Бот запущен. Ожидает команды.")
+    app.run_polling()
+
+# Запуск
+if __name__ == "__main__":
+    main()
