@@ -148,11 +148,21 @@ def shelves_keyboard(number):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# ✅ ИСПРАВЛЕННОЕ главное меню БЕЗ поиска и "все пружины"
 def main_menu_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Добавить пружину", callback_data="add_spring")]
     ])
+
+# ✅ НОВАЯ клавиатура выбора строки для удаления
+def delete_select_keyboard(matches):
+    keyboard = []
+    for match in matches[:8]:  # Максимум 8 кнопок
+        shelf = match['shelf']
+        row = match['row_index']
+        keyboard.append([InlineKeyboardButton(f"🗑️ стр.{row} {shelf}", callback_data=f"del_select:{row}")])
+    
+    keyboard.append([InlineKeyboardButton("🏠 Меню", callback_data="main_menu")])
+    return InlineKeyboardMarkup(keyboard)
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
@@ -227,17 +237,18 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                         f"📅 <b>Добавлена:</b> {match['add_date']}\n"
                         f"🔍 <b>Последнее:</b> {match['last_action']}"
                     )
+                    # ✅ ОДНА кнопка "Удалить"
                     keyboard = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete:{text}")],
+                        [InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete_select:{text}")],
                         [InlineKeyboardButton("🏠 Меню", callback_data="main_menu")]
                     ])
                 else:
                     response = f"🔍 <b>Найдено {len(matches)} пружин {text}:</b>\n\n"
                     for i, match in enumerate(matches, 1):
-                        response += f"{i}. {match['shelf']} • {match['add_date']}\n"
+                        response += f"{i}. стр.{match['row_index']} {match['shelf']} • {match['add_date']}\n"
+                    # ✅ ОДНА кнопка "Удалить"
                     keyboard = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🗑️ Удалить все", callback_data=f"delete_all:{text}")],
-                        [InlineKeyboardButton("🗑️ Удалить одну", callback_data=f"delete_one:{text}")],
+                        [InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete_select:{text}")],
                         [InlineKeyboardButton("🏠 Меню", callback_data="main_menu")]
                     ])
                 
@@ -331,55 +342,40 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # ✅ ИСПРАВЛЕННАЯ логика удаления при поиске
-    if data.startswith("delete:"):
+    # ✅ НОВАЯ логика: одна кнопка "Удалить" → выбор строки
+    if data.startswith("delete_select:"):
         number = data.split(":", 1)[1]
         data_all = sheet.get_all_records()
         matches = find_all_springs_by_number(data_all, number)
+        
         if matches:
-            for match in matches:
-                sheet.delete_rows(match['row_index'])
+            # Показываем выбор строк для удаления
             await query.edit_message_text(
-                f"🗑️ <b>Удалено {len(matches)} пружин</b> <code>{number}</code>",
-                reply_markup=main_menu_keyboard(),
+                f"🗑️ <b>Выбери строку для удаления {number}:</b>",
+                reply_markup=delete_select_keyboard(matches),
                 parse_mode='HTML'
             )
-            await log_action(context, user.id, user.username, "delete_spring", f"Количество: {len(matches)}", number)
-        else:
-            await query.edit_message_text("⚠️ Пружина не найдена.", reply_markup=main_menu_keyboard())
+            context.user_data["delete_matches"] = matches
         return
 
-    # ✅ Удалить все найденные
-    if data.startswith("delete_all:"):
-        number = data.split(":", 1)[1]
+    # ✅ Выбор конкретной строки для удаления
+    if data.startswith("del_select:"):
+        row_index = int(data.split(":", 1)[1])
         data_all = sheet.get_all_records()
-        matches = find_all_springs_by_number(data_all, number)
-        if matches:
-            for match in matches:
-                sheet.delete_rows(match['row_index'])
-            await query.edit_message_text(
-                f"🗑️ <b>Удалено {len(matches)} пружин</b> <code>{number}</code>",
-                reply_markup=main_menu_keyboard(),
-                parse_mode='HTML'
-            )
-            await log_action(context, user.id, user.username, "delete_all_springs", f"Количество: {len(matches)}", number)
-        return
-
-    # ✅ Удалить одну из нескольких
-    if data.startswith("delete_one:"):
-        number = data.split(":", 1)[1]
-        data_all = sheet.get_all_records()
-        matches = find_all_springs_by_number(data_all, number)
-        if matches:
-            # Удаляем первую найденную
-            first_match = matches[0]
-            sheet.delete_rows(first_match['row_index'])
-            await query.edit_message_text(
-                f"🗑️ <b>{number}</b> (стр. {first_match['row_index']}) удалена!",
-                reply_markup=main_menu_keyboard(),
-                parse_mode='HTML'
-            )
-            await log_action(context, user.id, user.username, "delete_specific_spring", f"Строка: {first_match['row_index']}", number, first_match['row_index'])
+        
+        # Находим пружину по номеру строки
+        for i, row in enumerate(data_all[1:], 1):
+            if i + 1 == row_index and row.get("Номер"):
+                number = row.get("Номер")
+                sheet.delete_rows(row_index)
+                await log_action(context, user.id, user.username, "delete_specific_spring", f"Строка: {row_index}", number, row_index)
+                await query.edit_message_text(
+                    f"✅ <b>{number}</b> (стр. {row_index}) удалена!",
+                    reply_markup=main_menu_keyboard(),
+                    parse_mode='HTML'
+                )
+                return
+        await query.edit_message_text("⚠️ Ошибка удаления.", reply_markup=main_menu_keyboard())
         return
 
 def main():
