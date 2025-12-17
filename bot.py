@@ -77,7 +77,6 @@ def format_date(date_str):
         except:
             return '❓ нет даты'
 
-# ✅ ИСПРАВЛЕННАЯ функция лога с row_index
 async def log_action(context, user_id, username, action_type, details="", spring_number=None, row_index=None):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     username = username or "пользователь"
@@ -111,7 +110,6 @@ def find_all_springs_by_number(data, number):
             })
     return matches
 
-# ✅ ИСПРАВЛЕННАЯ функция - находит ТОЧНУЮ последнюю строку!
 def find_last_added_row():
     """Возвращает номер последней строки с пружиной"""
     all_values = sheet.get_all_values()
@@ -120,14 +118,12 @@ def find_last_added_row():
             return i + 1
     return 1
 
-# Клавиатура ПОСЛЕ сохранения
 def saved_keyboard(number):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🗑️ Удалить эту", callback_data=f"delete_last:{number}")],
         [InlineKeyboardButton("✅ Готово", callback_data="exit_add_mode")]
     ])
 
-# Клавиатура полок
 def shelves_keyboard(number):
     keyboard = [
         [InlineKeyboardButton("A1", callback_data=f"add_confirm:{number}:a1"), 
@@ -152,11 +148,10 @@ def shelves_keyboard(number):
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# ✅ ИСПРАВЛЕННОЕ главное меню БЕЗ поиска и "все пружины"
 def main_menu_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ Добавить пружину", callback_data="add_spring")],
-        [InlineKeyboardButton("📊 Все пружины", callback_data="show_all")],
-        [InlineKeyboardButton("🔍 Поиск", callback_data="quick_search")]
+        [InlineKeyboardButton("➕ Добавить пружину", callback_data="add_spring")]
     ])
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -304,11 +299,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         shelf_code = parts[2]
         shelf = shelf_code.upper()
         
-        # ✅ Добавляем с датой и получаем row_index
         sheet.append_row([number, shelf, datetime.now().strftime("%Y-%m-%d %H:%M"), ""])
         row_index = find_last_added_row()
         
-        # ✅ Лог с row_index!
         await log_action(context, user.id, user.username, "add_spring", f"Полка: {shelf}", number, row_index)
         
         await query.edit_message_text(
@@ -338,17 +331,55 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    if data == "show_all":
+    # ✅ ИСПРАВЛЕННАЯ логика удаления при поиске
+    if data.startswith("delete:"):
+        number = data.split(":", 1)[1]
         data_all = sheet.get_all_records()
-        if len(data_all) <= 1:
-            await query.edit_message_text("📭 Склад пуст.", reply_markup=main_menu_keyboard())
-            return
-        summary = f"📊 <b>Всего: {len(data_all)-1} пружин</b>\n\n"
-        for row in data_all[1:6]:
-            summary += f"• <code>{row.get('Номер', '?')}</code> → {row.get('Полка', '?')}\n"
-        if len(data_all) > 6:
-            summary += f"\n... и ещё {len(data_all)-6}"
-        await query.edit_message_text(summary, reply_markup=main_menu_keyboard(), parse_mode='HTML')
+        matches = find_all_springs_by_number(data_all, number)
+        if matches:
+            for match in matches:
+                sheet.delete_rows(match['row_index'])
+            await query.edit_message_text(
+                f"🗑️ <b>Удалено {len(matches)} пружин</b> <code>{number}</code>",
+                reply_markup=main_menu_keyboard(),
+                parse_mode='HTML'
+            )
+            await log_action(context, user.id, user.username, "delete_spring", f"Количество: {len(matches)}", number)
+        else:
+            await query.edit_message_text("⚠️ Пружина не найдена.", reply_markup=main_menu_keyboard())
+        return
+
+    # ✅ Удалить все найденные
+    if data.startswith("delete_all:"):
+        number = data.split(":", 1)[1]
+        data_all = sheet.get_all_records()
+        matches = find_all_springs_by_number(data_all, number)
+        if matches:
+            for match in matches:
+                sheet.delete_rows(match['row_index'])
+            await query.edit_message_text(
+                f"🗑️ <b>Удалено {len(matches)} пружин</b> <code>{number}</code>",
+                reply_markup=main_menu_keyboard(),
+                parse_mode='HTML'
+            )
+            await log_action(context, user.id, user.username, "delete_all_springs", f"Количество: {len(matches)}", number)
+        return
+
+    # ✅ Удалить одну из нескольких
+    if data.startswith("delete_one:"):
+        number = data.split(":", 1)[1]
+        data_all = sheet.get_all_records()
+        matches = find_all_springs_by_number(data_all, number)
+        if matches:
+            # Удаляем первую найденную
+            first_match = matches[0]
+            sheet.delete_rows(first_match['row_index'])
+            await query.edit_message_text(
+                f"🗑️ <b>{number}</b> (стр. {first_match['row_index']}) удалена!",
+                reply_markup=main_menu_keyboard(),
+                parse_mode='HTML'
+            )
+            await log_action(context, user.id, user.username, "delete_specific_spring", f"Строка: {first_match['row_index']}", number, first_match['row_index'])
         return
 
 def main():
