@@ -100,13 +100,15 @@ def update_last_action_by_row(row_index, action_text):
 def find_all_springs_by_number(data, number):
     """Находит все пружины по номеру"""
     matches = []
-    for i, row in enumerate(data[1:], 1):
-        if str(row.get("Номер", "")) == number:
+    all_values = sheet.get_all_values()
+    for i, row in enumerate(all_values[1:], 1):
+        if row and len(row) > 0 and str(row[0]).strip() == number.strip():
             matches.append({
                 'row_index': i + 1,
-                'shelf': row.get('Полка', '❓'),
-                'add_date': format_date(row.get('Дата добавления', '')),
-                'last_action': row.get('Последнее действие', '❓')
+                'shelf': row[1] if len(row) > 1 else '❓',
+                'add_date': format_date(row[2] if len(row) > 2 else ''),
+                'last_action': row[3] if len(row) > 3 else '❓',
+                'number': number
             })
     return matches
 
@@ -114,7 +116,7 @@ def find_last_added_row():
     """Возвращает номер последней строки с пружиной"""
     all_values = sheet.get_all_values()
     for i in range(len(all_values)-1, 0, -1):
-        if all_values[i] and all_values[i][0]:  # Строка не пустая И номер есть
+        if all_values[i] and len(all_values[i]) > 0 and all_values[i][0]:
             return i + 1
     return 1
 
@@ -153,13 +155,13 @@ def main_menu_keyboard():
         [InlineKeyboardButton("➕ Добавить пружину", callback_data="add_spring")]
     ])
 
-# ✅ НОВАЯ клавиатура выбора строки для удаления
+# ✅ ИСПРАВЛЕННАЯ клавиатура выбора строки для удаления
 def delete_select_keyboard(matches):
     keyboard = []
     for match in matches[:8]:  # Максимум 8 кнопок
         shelf = match['shelf']
         row = match['row_index']
-        keyboard.append([InlineKeyboardButton(f"🗑️ стр.{row} {shelf}", callback_data=f"del_select:{row}")])
+        keyboard.append([InlineKeyboardButton(f"🗑️ стр.{row} {shelf}", callback_data=f"del_select:{row}:{match['number']}")])
     
     keyboard.append([InlineKeyboardButton("🏠 Меню", callback_data="main_menu")])
     return InlineKeyboardMarkup(keyboard)
@@ -178,7 +180,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
-    data = sheet.get_all_records()
+    data = sheet.get_all_values()
     try:
         if text.startswith("+"):
             content = text[1:].strip()
@@ -195,7 +197,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         elif text.startswith("-"):
             number = text[1:].strip()
-            matches = find_all_springs_by_number(data, number)
+            matches = find_all_springs_by_number([], number)
             if matches:
                 for match in matches:
                     sheet.delete_rows(match['row_index'])
@@ -212,7 +214,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         elif text.startswith("="):
             content = text[1:].strip()
             number, new_shelf = [x.strip() for x in content.split(",")]
-            matches = find_all_springs_by_number(data, number)
+            matches = find_all_springs_by_number([], number)
             if matches:
                 for match in matches:
                     sheet.update_cell(match['row_index'], 2, new_shelf)
@@ -227,7 +229,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
 
         else:
-            matches = find_all_springs_by_number(data, text)
+            matches = find_all_springs_by_number([], text)
             if matches:
                 if len(matches) == 1:
                     match = matches[0]
@@ -237,7 +239,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                         f"📅 <b>Добавлена:</b> {match['add_date']}\n"
                         f"🔍 <b>Последнее:</b> {match['last_action']}"
                     )
-                    # ✅ ОДНА кнопка "Удалить"
                     keyboard = InlineKeyboardMarkup([
                         [InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete_select:{text}")],
                         [InlineKeyboardButton("🏠 Меню", callback_data="main_menu")]
@@ -246,7 +247,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     response = f"🔍 <b>Найдено {len(matches)} пружин {text}:</b>\n\n"
                     for i, match in enumerate(matches, 1):
                         response += f"{i}. стр.{match['row_index']} {match['shelf']} • {match['add_date']}\n"
-                    # ✅ ОДНА кнопка "Удалить"
                     keyboard = InlineKeyboardMarkup([
                         [InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete_select:{text}")],
                         [InlineKeyboardButton("🏠 Меню", callback_data="main_menu")]
@@ -327,8 +327,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("delete_last:"):
         number = data.split(":", 1)[1]
-        data_all = sheet.get_all_records()
-        matches = find_all_springs_by_number(data_all, number)
+        matches = find_all_springs_by_number([], number)
         if matches:
             last_match = matches[-1]
             row_index = last_match['row_index']
@@ -342,11 +341,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # ✅ НОВАЯ логика: одна кнопка "Удалить" → выбор строки
+    # ✅ ИСПРАВЛЕННАЯ логика: одна кнопка "Удалить" → выбор строки
     if data.startswith("delete_select:"):
         number = data.split(":", 1)[1]
-        data_all = sheet.get_all_records()
-        matches = find_all_springs_by_number(data_all, number)
+        matches = find_all_springs_by_number([], number)
         
         if matches:
             # Показываем выбор строк для удаления
@@ -355,27 +353,26 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=delete_select_keyboard(matches),
                 parse_mode='HTML'
             )
-            context.user_data["delete_matches"] = matches
         return
 
-    # ✅ Выбор конкретной строки для удаления
+    # ✅ ИСПРАВЛЕННОЕ удаление конкретной строки
     if data.startswith("del_select:"):
-        row_index = int(data.split(":", 1)[1])
-        data_all = sheet.get_all_records()
+        parts = data.split(":", 2)
+        row_index = int(parts[1])
+        number = parts[2]
         
-        # Находим пружину по номеру строки
-        for i, row in enumerate(data_all[1:], 1):
-            if i + 1 == row_index and row.get("Номер"):
-                number = row.get("Номер")
-                sheet.delete_rows(row_index)
-                await log_action(context, user.id, user.username, "delete_specific_spring", f"Строка: {row_index}", number, row_index)
-                await query.edit_message_text(
-                    f"✅ <b>{number}</b> (стр. {row_index}) удалена!",
-                    reply_markup=main_menu_keyboard(),
-                    parse_mode='HTML'
-                )
-                return
-        await query.edit_message_text("⚠️ Ошибка удаления.", reply_markup=main_menu_keyboard())
+        # ✅ ПРЯМО удаляем строку по номеру
+        try:
+            sheet.delete_rows(row_index)
+            await log_action(context, user.id, user.username, "delete_specific_spring", f"Строка: {row_index}", number, row_index)
+            await query.edit_message_text(
+                f"✅ <b>{number}</b> (стр. {row_index}) удалена!",
+                reply_markup=main_menu_keyboard(),
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            logger.error(f"Ошибка удаления строки {row_index}: {e}")
+            await query.edit_message_text("⚠️ Ошибка удаления.", reply_markup=main_menu_keyboard())
         return
 
 def main():
