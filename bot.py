@@ -124,7 +124,17 @@ def find_last_added_row():
     data = sheet.get_all_records()
     return len(data)
 
-# ✅ УПРОЩЕННАЯ клавиатура ПОСЛЕ сохранения (БЕЗ "Следующая")
+def update_shelf_for_number(number, new_shelf):
+    """Находит пружину по номеру и обновляет полку"""
+    data = sheet.get_all_records()
+    for i, row in enumerate(data):
+        if str(row.get("Номер", "")) == number:
+            row_index = i + 2
+            sheet.update_cell(row_index, 2, new_shelf)
+            return row_index
+    return None
+
+# Клавиатура ПОСЛЕ сохранения
 def saved_keyboard(number):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✏️ Изменить номер", callback_data=f"edit_number:{number}")],
@@ -133,8 +143,8 @@ def saved_keyboard(number):
         [InlineKeyboardButton("✅ Готово", callback_data="exit_add_mode")]
     ])
 
-# ✅ Клавиатура полок (только для выбора полки)
-def shelves_keyboard(number):
+# Клавиатура полок для ДОБАВЛЕНИЯ
+def shelves_keyboard_add(number):
     keyboard = [
         [InlineKeyboardButton("A1", callback_data=f"add_confirm:{number}:a1"), InlineKeyboardButton("B1", callback_data=f"add_confirm:{number}:b1"), InlineKeyboardButton("C1", callback_data=f"add_confirm:{number}:c1")],
         [InlineKeyboardButton("A2", callback_data=f"add_confirm:{number}:a2"), InlineKeyboardButton("B2", callback_data=f"add_confirm:{number}:b2"), InlineKeyboardButton("C2", callback_data=f"add_confirm:{number}:c2")],
@@ -147,6 +157,21 @@ def shelves_keyboard(number):
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# Клавиатура полок для РЕДАКТИРОВАНИЯ
+def shelves_keyboard_edit(number):
+    keyboard = [
+        [InlineKeyboardButton("A1", callback_data=f"edit_shelf:{number}:a1"), InlineKeyboardButton("B1", callback_data=f"edit_shelf:{number}:b1"), InlineKeyboardButton("C1", callback_data=f"edit_shelf:{number}:c1")],
+        [InlineKeyboardButton("A2", callback_data=f"edit_shelf:{number}:a2"), InlineKeyboardButton("B2", callback_data=f"edit_shelf:{number}:b2"), InlineKeyboardButton("C2", callback_data=f"edit_shelf:{number}:c2")],
+        [InlineKeyboardButton("A3", callback_data=f"edit_shelf:{number}:a3"), InlineKeyboardButton("B3", callback_data=f"edit_shelf:{number}:b3"), InlineKeyboardButton("C3", callback_data=f"edit_shelf:{number}:c3")],
+        [InlineKeyboardButton("A4", callback_data=f"edit_shelf:{number}:a4"), InlineKeyboardButton("B4", callback_data=f"edit_shelf:{number}:b4")],
+        [InlineKeyboardButton("A5", callback_data=f"edit_shelf:{number}:a5"), InlineKeyboardButton("B5", callback_data=f"edit_shelf:{number}:b5")],
+        [InlineKeyboardButton("A6", callback_data=f"edit_shelf:{number}:a6"), InlineKeyboardButton("B6", callback_data=f"edit_shelf:{number}:b6")],
+        [InlineKeyboardButton("A7", callback_data=f"edit_shelf:{number}:a7"), InlineKeyboardButton("B7", callback_data=f"edit_shelf:{number}:b7")],
+        [InlineKeyboardButton("", callback_data="noop"), InlineKeyboardButton("B8", callback_data=f"edit_shelf:{number}:b8")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="exit_add_mode")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 def main_menu_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Добавить пружину", callback_data="add_spring")],
@@ -154,7 +179,7 @@ def main_menu_keyboard():
         [InlineKeyboardButton("🔍 Поиск", callback_data="quick_search")]
     ])
 
-# ✅ ЕДИНСТВЕННЫЙ обработчик всех текстовых сообщений
+# ЕДИНСТВЕННЫЙ обработчик всех текстовых сообщений
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     user = update.effective_user
@@ -184,16 +209,16 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         context.user_data.pop("waiting_new_number")
         return
 
-    # 2. НОВЫЙ НОМЕР ПРУЖИНЫ (всегда показывает полки)
+    # 2. НОВЫЙ НОМЕР ПРУЖИНЫ - показывает полки для ДОБАВЛЕНИЯ
     context.user_data["current_number"] = text
     await update.message.reply_text(
         f"✅ <b>Номер:</b> <code>{text}</code>\n\n"
         "📍 <b>Выбери полку:</b>",
-        reply_markup=shelves_keyboard(text),
+        reply_markup=shelves_keyboard_add(text),
         parse_mode='HTML'
     )
 
-    # 3. ОБЫЧНЫЕ КОМАНДЫ (+, -, =, поиск) - только если НЕ в режиме добавления
+    # 3. ОБЫЧНЫЕ КОМАНДЫ - только если НЕ в режиме добавления
     if not context.user_data.get("add_mode"):
         data = sheet.get_all_records()
         try:
@@ -243,7 +268,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 return
 
             else:
-                # ПОИСК
                 matches = find_all_springs_by_number(data, text)
                 if matches:
                     if len(matches) == 1:
@@ -326,27 +350,38 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ✅ ДОБАВЛЕНИЕ НА ПОЛКУ
-    if data.startswith("add_confirm:"):
+    # ✅ ОБРАБОТКА ДОБАВЛЕНИЯ И РЕДАКТИРОВАНИЯ ПОЛКИ
+    if data.startswith("add_confirm:") or data.startswith("edit_shelf:"):
         parts = data.split(":", 2)
         number = parts[1]
         shelf_code = parts[2]
         shelf = shelf_code.upper()
         
-        sheet.append_row([number, shelf, "", ""])
-        row_index = find_last_added_row()
-        
-        await log_action(context, user.id, user.username, "add_spring", f"Полка: {shelf}", number)
-        
-        # ✅ УПРОЩЕННАЯ клавиатура БЕЗ "Следующая"
-        await query.edit_message_text(
-            f"✅ <b>{number}</b> сохранена на <b>{shelf}</b> (стр. {row_index})!\n\n"
-            f"📝 Пиши следующий номер пружины или редактируй эту:",
-            reply_markup=saved_keyboard(number),
-            parse_mode='HTML'
-        )
-        context.user_data["last_added_row"] = row_index
-        context.user_data["last_added_number"] = number
+        if data.startswith("add_confirm:"):  # ДОБАВЛЕНИЕ НОВОЙ
+            sheet.append_row([number, shelf, "", ""])
+            row_index = find_last_added_row()
+            await log_action(context, user.id, user.username, "add_spring", f"Полка: {shelf}", number)
+            await query.edit_message_text(
+                f"✅ <b>{number}</b> сохранена на <b>{shelf}</b> (стр. {row_index})!\n\n"
+                f"📝 Пиши следующий номер пружины или редактируй эту:",
+                reply_markup=saved_keyboard(number),
+                parse_mode='HTML'
+            )
+            context.user_data["last_added_row"] = row_index
+            context.user_data["last_added_number"] = number
+            
+        else:  # ИЗМЕНЕНИЕ ПОЛКИ
+            row_index = update_shelf_for_number(number, shelf)
+            if row_index:
+                await log_action(context, user.id, user.username, "edit_shelf", f"Полка: {shelf}", number)
+                await query.edit_message_text(
+                    f"📍 <b>{number}</b> перемещена на <b>{shelf}</b> (стр. {row_index})!\n\n"
+                    f"📝 Пиши следующий номер пружины:",
+                    reply_markup=saved_keyboard(number),
+                    parse_mode='HTML'
+                )
+            else:
+                await query.edit_message_text("⚠️ Пружина не найдена.")
         return
 
     # ✅ ИЗМЕНИТЬ НОМЕР пружины
@@ -361,16 +396,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["waiting_new_number"] = number
         return
 
-    # ✅ ИЗМЕНИТЬ ПОЛКУ пружины
-    if data.startswith("edit_shelf:"):
+    # ✅ НАЧАЛО ИЗМЕНЕНИЯ ПОЛКИ
+    if data.startswith("edit_shelf:") and ":" not in data.split(":", 2)[1]:
         number = data.split(":", 1)[1]
         await query.edit_message_text(
             f"📍 <b>Текущая полка:</b> <b>? (поиск...)</b>\n\n"
             "📝 Выбери новую полку:",
-            reply_markup=shelves_keyboard(number),
+            reply_markup=shelves_keyboard_edit(number),
             parse_mode='HTML'
         )
-        context.user_data["editing_shelf"] = number
         return
 
     # ✅ УДАЛИТЬ ПОСЛЕДНЮЮ пружину
@@ -403,7 +437,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(summary, reply_markup=main_menu_keyboard(), parse_mode='HTML')
         return
 
-# ✅ ТОЛЬКО ОДИН обработчик сообщений!
+# Запуск
 def main():
     bot_token = os.getenv("BOT_TOKEN")
     if not bot_token:
