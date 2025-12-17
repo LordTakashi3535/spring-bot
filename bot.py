@@ -44,7 +44,7 @@ spreadsheet = client.open_by_url(
 sheet = spreadsheet.sheet1
 logs_sheet = spreadsheet.worksheet("Logs")
 
-# Инициализация структуры (ПРОСТЫЕ НАЗВАНИЯ)
+# Инициализация структуры
 def init_sheet():
     try:
         sheet.update('A1', 'Номер')
@@ -99,10 +99,8 @@ def update_last_action(spring_number, action_text):
     for i, row in enumerate(data):
         if str(row.get("Номер", "")) == spring_number:
             row_index = i + 2
-            # Дата добавления если пустая (колонка C)
             if not sheet.cell(row_index, 3).value:
                 sheet.update_cell(row_index, 3, datetime.now().strftime("%Y-%m-%d %H:%M"))
-            # Последнее действие (колонка D)
             sheet.update_cell(row_index, 4, action_text)
             break
 
@@ -119,7 +117,21 @@ def find_all_springs_by_number(data, number):
             })
     return matches
 
-# Клавиатуры
+# НОВАЯ клавиатура полок - просто B6 без лишнего
+def shelves_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("A1", callback_data="move_shelf:a1"), InlineKeyboardButton("B1", callback_data="move_shelf:b1"), InlineKeyboardButton("C1", callback_data="move_shelf:c1")],
+        [InlineKeyboardButton("A2", callback_data="move_shelf:a2"), InlineKeyboardButton("B2", callback_data="move_shelf:b2"), InlineKeyboardButton("C2", callback_data="move_shelf:c2")],
+        [InlineKeyboardButton("A3", callback_data="move_shelf:a3"), InlineKeyboardButton("B3", callback_data="move_shelf:b3"), InlineKeyboardButton("C3", callback_data="move_shelf:c3")],
+        [InlineKeyboardButton("A4", callback_data="move_shelf:a4"), InlineKeyboardButton("B4", callback_data="move_shelf:b4")],
+        [InlineKeyboardButton("A5", callback_data="move_shelf:a5"), InlineKeyboardButton("B5", callback_data="move_shelf:b5")],
+        [InlineKeyboardButton("A6", callback_data="move_shelf:a6"), InlineKeyboardButton("B6", callback_data="move_shelf:b6")],
+        [InlineKeyboardButton("A7", callback_data="move_shelf:a7"), InlineKeyboardButton("B7", callback_data="move_shelf:b7")],
+        [InlineKeyboardButton("", callback_data="noop"), InlineKeyboardButton("B8", callback_data="move_shelf:b8")],
+        [InlineKeyboardButton("❌ Выход", callback_data="exit_add_mode")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 def main_menu_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Добавить пружину", callback_data="add_spring")],
@@ -127,22 +139,8 @@ def main_menu_keyboard():
         [InlineKeyboardButton("🔍 Поиск", callback_data="quick_search")]
     ])
 
-def shelves_keyboard():
-    keyboard = [
-        [InlineKeyboardButton("🅰️ A1", callback_data="move_shelf:a1"), InlineKeyboardButton("🅱️ B1", callback_data="move_shelf:b1"), InlineKeyboardButton("🅲️ C1", callback_data="move_shelf:c1")],
-        [InlineKeyboardButton("🅰️ A2", callback_data="move_shelf:a2"), InlineKeyboardButton("🅱️ B2", callback_data="move_shelf:b2"), InlineKeyboardButton("🅲️ C2", callback_data="move_shelf:c2")],
-        [InlineKeyboardButton("🅰️ A3", callback_data="move_shelf:a3"), InlineKeyboardButton("🅱️ B3", callback_data="move_shelf:b3"), InlineKeyboardButton("🅲️ C3", callback_data="move_shelf:c3")],
-        [InlineKeyboardButton("🅰️ A4", callback_data="move_shelf:a4"), InlineKeyboardButton("🅱️ B4", callback_data="move_shelf:b4")],
-        [InlineKeyboardButton("🅰️ A5", callback_data="move_shelf:a5"), InlineKeyboardButton("🅱️ B5", callback_data="move_shelf:b5")],
-        [InlineKeyboardButton("🅰️ A6", callback_data="move_shelf:a6"), InlineKeyboardButton("🅱️ B6", callback_data="move_shelf:b6")],
-        [InlineKeyboardButton("🅰️ A7", callback_data="move_shelf:a7"), InlineKeyboardButton("🅱️ B7", callback_data="move_shelf:b7")],
-        [InlineKeyboardButton("🔘", callback_data="noop"), InlineKeyboardButton("🅱️ B8", callback_data="move_shelf:b8")],
-        [InlineKeyboardButton("❌ Отмена", callback_data="cancel")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
 def cancel_keyboard():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="cancel")]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Меню", callback_data="main_menu")]])
 
 # /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -164,22 +162,47 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     data = sheet.get_all_records()
 
-    # Режим добавления
-    if context.user_data.get("adding_spring"):
-        if "spring_number" not in context.user_data:
-            if text.lower() == "отмена":
-                context.user_data.clear()
-                await update.message.reply_text("❌ Добавление отменено.", reply_markup=main_menu_keyboard())
-                await log_action(context, user.id, user.username, "cancel_adding")
+    # Режим массового добавления
+    if context.user_data.get("add_mode"):
+        if text.lower() == "выход" or text.lower() == "отмена":
+            context.user_data.clear()
+            await update.message.reply_text("✅ Режим добавления завершён.", reply_markup=main_menu_keyboard())
+            return
+        
+        # Парсим номер и полку из текста
+        try:
+            if "," in text:
+                number, shelf = [x.strip() for x in text.split(",")]
+            else:
+                number = text
+                await update.message.reply_text(
+                    f"✅ <b>{number}</b> добавлена!\n\n"
+                    "📝 Пиши следующий номер или <code>выход</code>:",
+                    reply_markup=shelves_keyboard(),
+                    parse_mode='HTML'
+                )
+                context.user_data["last_number"] = number
                 return
-            context.user_data["spring_number"] = text
+            
+            sheet.append_row([number, shelf, "", ""])
             await update.message.reply_text(
-                f"✅ <b>Номер:</b> <code>{text}</code>\n\n📍 <b>Выбери полку:</b>",
+                f"🎉 <b>{number}</b> добавлена на <b>{shelf}</b>!\n\n"
+                "📝 Пиши следующий номер или <code>выход</code>:",
                 reply_markup=shelves_keyboard(),
                 parse_mode='HTML'
             )
-            return
+            await log_action(context, user.id, user.username, "add_spring", f"Полка: {shelf}", number)
+            
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ Ошибка: {e}\n\n"
+                "📝 Формат: <code>123, A1</code> или просто номер",
+                reply_markup=shelves_keyboard(),
+                parse_mode='HTML'
+            )
+        return
 
+    # Обычные команды
     try:
         if text.startswith("+"):
             content = text[1:].strip()
@@ -224,7 +247,6 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("⚠️ Пружина не найдена.", reply_markup=main_menu_keyboard())
 
         else:
-            # Поиск
             matches = find_all_springs_by_number(data, text)
             if matches:
                 if len(matches) == 1:
@@ -270,23 +292,27 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user = update.effective_user
 
-    if data == "cancel":
-        context.user_data.clear()
-        await query.edit_message_text("❌ Отменено.", reply_markup=main_menu_keyboard())
-        return
-
     if data == "main_menu":
         await query.edit_message_text("🤖 <b>Главное меню</b>", reply_markup=main_menu_keyboard(), parse_mode='HTML')
+        context.user_data.clear()
         return
 
     if data == "add_spring":
         context.user_data.clear()
-        context.user_data["adding_spring"] = True
+        context.user_data["add_mode"] = True
         await query.edit_message_text(
-            "➕ <b>Добавление пружины</b>\n\n📝 Напиши номер пружины:",
-            reply_markup=cancel_keyboard(),
+            "➕ <b>Режим массового добавления</b>\n\n"
+            "📝 Пиши номер пружины или <code>номер, полка</code>\n"
+            "❌ <code>выход</code> - завершить\n\n"
+            "Пример: <code>123</code> или <code>123, A1</code>",
+            reply_markup=shelves_keyboard(),
             parse_mode='HTML'
         )
+        return
+
+    if data == "exit_add_mode":
+        context.user_data.clear()
+        await query.edit_message_text("✅ Режим добавления завершён.", reply_markup=main_menu_keyboard())
         return
 
     if data == "show_all":
@@ -306,38 +332,23 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🔍 <b>Поиск</b>\n\nНапиши номер пружины в чат!", reply_markup=main_menu_keyboard(), parse_mode='HTML')
         return
 
-    # Добавление пружины
-    if context.user_data.get("adding_spring") and data.startswith("move_shelf:"):
+    # Добавление через полки в режиме массового добавления
+    if context.user_data.get("add_mode") and context.user_data.get("last_number") and data.startswith("move_shelf:"):
         shelf = data.split(":", 1)[1].upper()
-        context.user_data["spring_shelf"] = shelf
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Подтвердить", callback_data="confirm_add")],
-            [InlineKeyboardButton("❌ Отмена", callback_data="cancel")]
-        ])
+        number = context.user_data["last_number"]
+        
+        sheet.append_row([number, shelf, "", ""])
+        await log_action(context, user.id, user.username, "add_spring", f"Полка: {shelf}", number)
+        
         await query.edit_message_text(
-            f"✅ <b>Подтверждение:</b>\n\n"
-            f"🔢 Номер: <code>{context.user_data['spring_number']}</code>\n"
-            f"📍 Полка: <b>{shelf}</b>",
-            reply_markup=keyboard,
+            f"🎉 <b>{number}</b> добавлена на <b>{shelf}</b>!\n\n"
+            "📝 Пиши следующий номер или <code>выход</code>:",
+            reply_markup=shelves_keyboard(),
             parse_mode='HTML'
         )
         return
 
-    if data == "confirm_add" and context.user_data.get("adding_spring"):
-        number = context.user_data.get("spring_number")
-        shelf = context.user_data.get("spring_shelf")
-        if number and shelf:
-            sheet.append_row([number, shelf, "", ""])
-            await log_action(context, user.id, user.username, "add_spring", f"Полка: {shelf}", number)
-            context.user_data.clear()
-            await query.edit_message_text(
-                f"🎉 <b>{number}</b> добавлена на <b>{shelf}</b>!",
-                reply_markup=main_menu_keyboard(),
-                parse_mode='HTML'
-            )
-        return
-
-    # Удаление всех
+    # Остальные обработчики (удаление, редактирование) - как раньше
     if data.startswith("delete_all:"):
         number = data.split(":", 1)[1]
         matches = context.user_data.get(f"search_results_{number}", [])
@@ -347,7 +358,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"🗑️ <b>Удалено {len(matches)} пружин</b> {number}", reply_markup=main_menu_keyboard(), parse_mode='HTML')
         return
 
-    # Удалить одну
     if data.startswith("delete_one:"):
         number = data.split(":", 1)[1]
         matches = context.user_data.get(f"search_results_{number}", [])
@@ -357,7 +367,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🗑️ {match['shelf']} (стр.{match['row_index']})",
                 callback_data=f"delete_specific:{number}:{match['row_index']}"
             )])
-        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
+        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="main_menu")])
         await query.edit_message_text(f"🗑️ <b>Выбери какую удалить:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         return
 
@@ -368,7 +378,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"🗑️ Пружина {number} (стр.{row_index}) удалена.", reply_markup=main_menu_keyboard())
         return
 
-    # Редактировать выбор
     if data.startswith("edit_select:"):
         number = data.split(":", 1)[1]
         matches = context.user_data.get(f"search_results_{number}", [])
@@ -378,11 +387,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✏️ {match['shelf']} (стр.{match['row_index']})",
                 callback_data=f"edit:{number}:{match['row_index']}"
             )])
-        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
+        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="main_menu")])
         await query.edit_message_text(f"✏️ <b>Выбери для редактирования:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         return
 
-    # Редактировать
     if data.startswith("edit:"):
         parts = data.split(":")
         number, row_index = parts[1], parts[2]
@@ -395,7 +403,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Перемещение
     if context.user_data.get("editing_spring") and data.startswith("move_shelf:"):
         shelf = data.split(":", 1)[1].upper()
         number = context.user_data.get("editing_spring")
@@ -410,18 +417,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             context.user_data.clear()
         return
-
-    if data.startswith("delete:"):
-        number = data.split(":", 1)[1]
-        data_all = sheet.get_all_records()
-        matches = find_all_springs_by_number(data_all, number)
-        if matches:
-            for match in matches:
-                sheet.delete_rows(match['row_index'])
-            await log_action(context, user.id, user.username, "delete_spring", f"Количество: {len(matches)}", number)
-            await query.edit_message_text(f"🗑️ <b>Удалено {len(matches)} пружин</b> {number}", reply_markup=main_menu_keyboard(), parse_mode='HTML')
-        else:
-            await query.edit_message_text("⚠️ Пружина не найдена.", reply_markup=main_menu_keyboard())
 
 # Запуск
 def main():
