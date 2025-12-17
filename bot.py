@@ -140,18 +140,12 @@ def saved_keyboard(number):
         [InlineKeyboardButton("✅ Готово", callback_data="exit_add_mode")]
     ])
 
-async def log_action(context, user_id, username, action_type, details="", spring_number=None):
-    """Логирование с правильным форматом удаления"""
+async def log_action(context, user_id, username, action, details, spring_number):
+    """Правильное логирование БЕЗ лишних двоеточий"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     username = username or "пользователь"
-    
-    if "удал" in action_type.lower():
-        log_entry = f"{action_type}: Полка: {details}"
-    else:
-        log_entry = f"{action_type}: {details}"
-    
-    row = [timestamp, user_id, username, log_entry, spring_number or ""]
-    
+    log_entry = f"{action}: {details}"
+    row = [timestamp, user_id, username, log_entry, spring_number]
     try:
         logs_sheet.append_row(row)
     except Exception as e:
@@ -179,7 +173,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 timestamp = log['timestamp'][:16]
                 response += f"{i}. {timestamp} | <code>{log['username']}</code>\n"
                 response += f"   {log['action']}\n\n"
-            
             if len(logs) > 10:
                 response += f"... и ещё {len(logs)-10} действий"
         else:
@@ -188,7 +181,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🏠 Меню", callback_data="main_menu")]
         ])
-        
         await update.message.reply_text(response, reply_markup=keyboard, parse_mode='HTML')
         context.user_data.clear()
         return
@@ -212,12 +204,12 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             if matches:
                 for match in matches:
                     sheet.delete_rows(match['row_index'])
+                await log_action(context, user.id, user.username, "🗑️ удаление", f"{len(matches)} шт", number)
                 await update.message.reply_text(
                     f"🗑️ <b>Удалено {len(matches)} пружин</b> <code>{number}</code>",
                     reply_markup=main_menu_keyboard(),
                     parse_mode='HTML'
                 )
-                await log_action(context, user.id, user.username, "🗑️ удаление", f"{len(matches)} шт", number)
             else:
                 await update.message.reply_text("⚠️ Пружина не найдена.", reply_markup=main_menu_keyboard())
             return
@@ -229,12 +221,12 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             if matches:
                 for match in matches:
                     sheet.update_cell(match['row_index'], 2, new_shelf)
+                await log_action(context, user.id, user.username, "🔄 перемещение", f"Полка: {new_shelf}", number)
                 await update.message.reply_text(
                     f"🔄 <b>{len(matches)} пружин</b> <code>{number}</code> → <b>{new_shelf}</b>",
                     reply_markup=main_menu_keyboard(),
                     parse_mode='HTML'
                 )
-                await log_action(context, user.id, user.username, "🔄 перемещение", f"Полка: {new_shelf}", number)
             else:
                 await update.message.reply_text("⚠️ Пружина не найдена.", reply_markup=main_menu_keyboard())
             return
@@ -266,7 +258,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                         [InlineKeyboardButton("🔄 Переместить", callback_data=f"move_select:{text}")],
                         [InlineKeyboardButton("🏠 Меню", callback_data="main_menu")]
                     ])
-                
                 await update.message.reply_text(response, reply_markup=keyboard, parse_mode='HTML')
             else:
                 await update.message.reply_text("⚠️ Пружина не найдена.", reply_markup=main_menu_keyboard())
@@ -335,17 +326,31 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         shelf_code = parts[2]
         shelf = shelf_code.upper()
         
-        sheet.append_row([number, shelf, datetime.now().strftime("%Y-%m-%d %H:%M")])
-        row_index = find_last_added_row()
-        
-        await log_action(context, user.id, user.username, "➕ добавление", f"Полка: {shelf}", number)
-        
-        await query.edit_message_text(
-            f"✅ <b>{number}</b> сохранена на <b>{shelf}</b> (стр. {row_index})!\n\n"
-            f"📝 Пиши следующий номер пружины:",
-            reply_markup=saved_keyboard(number),
-            parse_mode='HTML'
-        )
+        # ✅ Проверяем режим перемещения
+        if context.user_data.get("move_row_index"):
+            # Это перемещение - МЕНЯЕМ существующую строку
+            row_index = context.user_data["move_row_index"]
+            old_shelf = context.user_data["move_old_shelf"]
+            sheet.update_cell(row_index, 2, shelf)
+            await log_action(context, user.id, user.username, "🔄 перемещение", f"Полка: {old_shelf} → {shelf}", number)
+            await query.edit_message_text(
+                f"✅ <b>{number}</b> перемещена!\n"
+                f"📍 {old_shelf} → <b>{shelf}</b> (стр. {row_index})",
+                reply_markup=main_menu_keyboard(),
+                parse_mode='HTML'
+            )
+            context.user_data.clear()
+        else:
+            # Обычное добавление
+            sheet.append_row([number, shelf, datetime.now().strftime("%Y-%m-%d %H:%M")])
+            row_index = find_last_added_row()
+            await log_action(context, user.id, user.username, "➕ добавление", f"Полка: {shelf}", number)
+            await query.edit_message_text(
+                f"✅ <b>{number}</b> сохранена на <b>{shelf}</b> (стр. {row_index})!\n\n"
+                f"📝 Пиши следующий номер пружины:",
+                reply_markup=saved_keyboard(number),
+                parse_mode='HTML'
+            )
         return
 
     if data.startswith("delete_last:"):
@@ -365,7 +370,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # ✅ Выбор строки для УДАЛЕНИЯ
     if data.startswith("delete_select:"):
         number = data.split(":", 1)[1]
         matches = find_all_springs_by_number(number)
@@ -380,7 +384,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # ✅ НОВОЕ: Выбор строки для ПЕРЕМЕЩЕНИЯ
     if data.startswith("move_select:"):
         number = data.split(":", 1)[1]
         matches = find_all_springs_by_number(number)
@@ -395,13 +398,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # ✅ Удаление конкретной строки
     if data.startswith("del_select:"):
         parts = data.split(":", 3)
         row_index = int(parts[1])
         number = parts[2]
         shelf = parts[3] if len(parts) > 3 else "❓"
-        
         try:
             sheet.delete_rows(row_index)
             await log_action(context, user.id, user.username, "🗑️ удаление", f"Полка: {shelf}", number)
@@ -415,7 +416,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("⚠️ Ошибка удаления.", reply_markup=main_menu_keyboard())
         return
 
-    # ✅ НОВОЕ: Выбор новой полки для перемещения
     if data.startswith("move_row:"):
         parts = data.split(":", 3)
         row_index = int(parts[1])
@@ -428,31 +428,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await query.edit_message_text(
             f"🔄 <b>{number}</b> (стр. {row_index}, {old_shelf}) → <b>выбери новую полку:</b>",
-            reply_markup=shelves_keyboard(f"move:{number}"),
+            reply_markup=shelves_keyboard(number),
             parse_mode='HTML'
         )
-        return
-
-    # ✅ Подтверждение перемещения
-    if data.startswith("add_confirm:") and context.user_data.get("move_row_index"):
-        parts = data.split(":", 2)
-        number = parts[1]
-        shelf_code = parts[2]
-        shelf = shelf_code.upper()
-        
-        row_index = context.user_data["move_row_index"]
-        old_shelf = context.user_data["move_old_shelf"]
-        
-        sheet.update_cell(row_index, 2, shelf)
-        await log_action(context, user.id, user.username, "🔄 перемещение", f"Полка: {old_shelf} → {shelf}", number)
-        
-        await query.edit_message_text(
-            f"✅ <b>{number}</b> перемещена!\n"
-            f"📍 {old_shelf} → <b>{shelf}</b> (стр. {row_index})",
-            reply_markup=main_menu_keyboard(),
-            parse_mode='HTML'
-        )
-        context.user_data.clear()
         return
 
 def main():
