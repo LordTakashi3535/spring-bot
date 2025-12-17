@@ -148,71 +148,44 @@ def main_menu_keyboard():
         [InlineKeyboardButton("🔍 Поиск", callback_data="quick_search")]
     ])
 
-# ✅ НОВЫЙ обработчик редактирования номера ПОСЛЕ добавления
-async def handle_edit_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка нового номера при редактировании после добавления"""
-    if not context.user_data.get("waiting_new_number"):
-        return False  # Не режим редактирования
-    
+# ✅ ЕДИНСТВЕННЫЙ обработчик всех текстовых сообщений
+async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     user = update.effective_user
     
-    old_number = context.user_data["waiting_new_number"]
-    new_number = text
-    
-    data_all = sheet.get_all_records()
-    matches = find_all_springs_by_number(data_all, old_number)
-    if matches:
-        # Берем последнюю добавленную пружину
-        last_match = matches[-1]
-        sheet.update_cell(last_match['row_index'], 1, new_number)
-        await log_action(context, user.id, user.username, "edit_number", f"Старый: {old_number} → {new_number}", new_number)
+    # 1. РЕЖИМ РЕДАКТИРОВАНИЯ НОМЕРА (приоритет №1)
+    if context.user_data.get("waiting_new_number"):
+        old_number = context.user_data["waiting_new_number"]
+        new_number = text
         
-        await update.message.reply_text(
-            f"✏️ <b>{old_number}</b> → <b>{new_number}</b> (стр. {last_match['row_index']})!\n\n"
-            f"📝 Пиши следующий номер пружины:",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Выход", callback_data="exit_add_mode")]]),
-            parse_mode='HTML'
-        )
-        context.user_data["current_number"] = new_number  # Обновляем текущий номер
-    else:
-        await update.message.reply_text("⚠️ Пружина не найдена для редактирования.")
-    
-    context.user_data.pop("waiting_new_number")
-    return True  # Обработано
-
-# /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 <b>Склад пружин</b>\n\n"
-        "📋 <b>Быстрые команды:</b>\n"
-        "• <code>+123, A1</code> — добавить\n"
-        "• <code>-123</code> — удалить все\n"
-        "• <code>=123, B2</code> — переместить\n"
-        "• <code>123</code> — найти\n\n"
-        "🎮 Используй кнопки ниже!",
-        reply_markup=main_menu_keyboard(),
-        parse_mode='HTML'
-    )
-
-# Обработка текста
-async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ✅ ПРОВЕРКА РЕЖИМА РЕДАКТИРОВАНИЯ ПЕРВЫМ ДЕЛОМ
-    if await handle_edit_number(update, context):
+        data_all = sheet.get_all_records()
+        matches = find_all_springs_by_number(data_all, old_number)
+        if matches:
+            last_match = matches[-1]
+            sheet.update_cell(last_match['row_index'], 1, new_number)
+            await log_action(context, user.id, user.username, "edit_number", f"Старый: {old_number} → {new_number}", new_number)
+            
+            await update.message.reply_text(
+                f"✏️ <b>{old_number}</b> → <b>{new_number}</b> (стр. {last_match['row_index']})!\n\n"
+                f"📝 Пиши следующий номер пружины:",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Выход", callback_data="exit_add_mode")]]),
+                parse_mode='HTML'
+            )
+            context.user_data["current_number"] = new_number
+        else:
+            await update.message.reply_text("⚠️ Пружина не найдена для редактирования.")
+        
+        context.user_data.pop("waiting_new_number")
         return
-        
-    text = update.message.text.strip()
-    user = update.effective_user
-    data = sheet.get_all_records()
 
-    # Режим массового добавления - ЖДЕТ НОМЕР
+    # 2. РЕЖИМ МАССОВОГО ДОБАВЛЕНИЯ (приоритет №2)
     if context.user_data.get("add_mode"):
         if text.lower() in ["выход", "отмена", "exit"]:
             context.user_data.clear()
             await update.message.reply_text("✅ Режим добавления завершён.", reply_markup=main_menu_keyboard())
             return
         
-        # Пользователь написал НОМЕР - показываем полки + управление
+        # Показываем полки для нового номера
         context.user_data["current_number"] = text
         await update.message.reply_text(
             f"✅ <b>Номер:</b> <code>{text}</code>\n\n"
@@ -222,7 +195,8 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Обычные команды
+    # 3. ОБЫЧНЫЕ КОМАНДЫ (+, -, =, поиск)
+    data = sheet.get_all_records()
     try:
         if text.startswith("+"):
             content = text[1:].strip()
@@ -234,6 +208,7 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='HTML'
             )
             await log_action(context, user.id, user.username, "add_spring", f"Полка: {shelf}", number)
+            return
 
         elif text.startswith("-"):
             number = text[1:].strip()
@@ -249,6 +224,7 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await log_action(context, user.id, user.username, "delete_spring", f"Количество: {len(matches)}", number)
             else:
                 await update.message.reply_text("⚠️ Пружина не найдена.", reply_markup=main_menu_keyboard())
+            return
 
         elif text.startswith("="):
             content = text[1:].strip()
@@ -265,8 +241,10 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await log_action(context, user.id, user.username, "move_spring", f"Полка: {new_shelf}", number)
             else:
                 await update.message.reply_text("⚠️ Пружина не найдена.", reply_markup=main_menu_keyboard())
+            return
 
         else:
+            # ПОИСК
             matches = find_all_springs_by_number(data, text)
             if matches:
                 if len(matches) == 1:
@@ -304,6 +282,20 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Ошибка: {e}")
         await update.message.reply_text("❌ Ошибка. Проверь формат: <code>+123, A1</code>", parse_mode='HTML')
+
+# /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🤖 <b>Склад пружин</b>\n\n"
+        "📋 <b>Быстрые команды:</b>\n"
+        "• <code>+123, A1</code> — добавить\n"
+        "• <code>-123</code> — удалить все\n"
+        "• <code>=123, B2</code> — переместить\n"
+        "• <code>123</code> — найти\n\n"
+        "🎮 Используй кнопки ниже!",
+        reply_markup=main_menu_keyboard(),
+        parse_mode='HTML'
+    )
 
 # Обработка кнопок
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -375,7 +367,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data_all = sheet.get_all_records()
         matches = find_all_springs_by_number(data_all, number)
         if matches:
-            # Удаляем последнюю найденную (только что добавленную)
             last_match = matches[-1]
             sheet.delete_rows(last_match['row_index'])
             await log_action(context, user.id, user.username, "delete_specific_spring", f"Строка: {last_match['row_index']}", number)
@@ -411,7 +402,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(summary, reply_markup=main_menu_keyboard(), parse_mode='HTML')
         return
 
-# Запуск
+# ✅ ТОЛЬКО ОДИН обработчик сообщений!
 def main():
     bot_token = os.getenv("BOT_TOKEN")
     if not bot_token:
@@ -421,11 +412,8 @@ def main():
     app = ApplicationBuilder().token(bot_token).build()
     app.add_handler(CommandHandler("start", start))
     
-    # ✅ ПОРЯДОК ОБРАБОТЧИКОВ ВАЖЕН!
-    # 1. Сначала редактирование номера
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_number))
-    # 2. Потом основной обработчик
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
+    # ✅ ЕДИНСТВЕННЫЙ обработчик текста - решает ВСЕ проблемы!
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
     
     app.add_handler(CallbackQueryHandler(callback_handler))
 
