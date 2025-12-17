@@ -48,10 +48,7 @@ logs_sheet = spreadsheet.worksheet("Logs")
 # Инициализация структуры
 def init_sheet():
     try:
-        sheet.update('A1', 'Номер')
-        sheet.update('B1', 'Полка')
-        sheet.update('C1', 'Дата добавления')
-        sheet.update('D1', 'Последнее действие')
+        sheet.update('A1', [['Номер', 'Полка', 'Дата добавления', 'Последнее действие']])
     except:
         pass
 
@@ -80,7 +77,7 @@ def format_date(date_str):
         except:
             return '❓ нет даты'
 
-# Запись лога
+# ✅ НОВЫЙ формат записи лога - БЕЗ изменения даты добавления
 async def log_action(context, user_id, username, action_type, details="", spring_number=None):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     username = username or "пользователь"
@@ -89,30 +86,28 @@ async def log_action(context, user_id, username, action_type, details="", spring
     
     try:
         logs_sheet.append_row(row)
+        # ✅ ТОЛЬКО обновляем "Последнее действие" - НЕ трогаем дату добавления!
         if spring_number:
-            update_last_action(spring_number, f"{ACTION_RU.get(action_type, action_type)} ({username})")
+            update_last_action_only(spring_number, f"{ACTION_RU.get(action_type, action_type)} ({username})")
     except Exception as e:
         logger.error(f"Ошибка лога: {e}")
 
-def update_last_action(spring_number, action_text):
-    """Обновляет колонку D"""
+def update_last_action_only(spring_number, action_text):
+    """Обновляет ТОЛЬКО колонку D (Последнее действие)"""
     data = sheet.get_all_records()
     for i, row in enumerate(data[1:], 1):  # Пропускаем заголовки
         if str(row.get("Номер", "")) == spring_number:
             row_index = i + 1
-            if not sheet.cell(row_index, 3).value:
-                sheet.update_cell(row_index, 3, datetime.now().strftime("%Y-%m-%d %H:%M"))
-            sheet.update_cell(row_index, 4, action_text)
+            sheet.update_cell(row_index, 4, action_text)  # ✅ ТОЛЬКО колонка D!
             break
 
 def find_all_springs_by_number(data, number):
     """Находит все пружины по номеру - ПРОПУСКАЕТ ЗАГОЛОВКИ"""
     matches = []
-    # ✅ ПРОПУСКАЕМ ПЕРВУЮ СТРОКУ (заголовки)
     for i, row in enumerate(data[1:], 1):
         if str(row.get("Номер", "")) == number:
             matches.append({
-                'row_index': i + 1,  # Реальный номер строки
+                'row_index': i + 1,
                 'shelf': row.get('Полка', '❓'),
                 'add_date': format_date(row.get('Дата добавления', '')),
                 'last_action': row.get('Последнее действие', '❓')
@@ -124,14 +119,14 @@ def find_last_added_row():
     data = sheet.get_all_records()
     return len(data)
 
-# Клавиатура ПОСЛЕ сохранения - ТОЛЬКО УДАЛИТЬ
+# Клавиатура ПОСЛЕ сохранения
 def saved_keyboard(number):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🗑️ Удалить эту", callback_data=f"delete_last:{number}")],
         [InlineKeyboardButton("✅ Готово", callback_data="exit_add_mode")]
     ])
 
-# Клавиатура полок для ДОБАВЛЕНИЯ
+# Клавиатура полок
 def shelves_keyboard(number):
     keyboard = [
         [InlineKeyboardButton("A1", callback_data=f"add_confirm:{number}:a1"), 
@@ -163,12 +158,10 @@ def main_menu_keyboard():
         [InlineKeyboardButton("🔍 Поиск", callback_data="quick_search")]
     ])
 
-# ✅ ИСПРАВЛЕННЫЙ обработчик текстовых сообщений
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     user = update.effective_user
     
-    # ✅ ПРОВЕРКА РЕЖИМА МАССОВОГО ДОБАВЛЕНИЯ (приоритет №1)
     if context.user_data.get("add_mode"):
         context.user_data["current_number"] = text
         await update.message.reply_text(
@@ -179,13 +172,13 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
-    # ✅ ОБЫЧНЫЕ КОМАНДЫ (+, -, =, поиск)
     data = sheet.get_all_records()
     try:
         if text.startswith("+"):
             content = text[1:].strip()
             number, shelf = [x.strip() for x in content.split(",")]
-            sheet.append_row([number, shelf, "", ""])
+            # ✅ ДАТА ДОБАВЛЕНИЯ ПРЯМО при создании!
+            sheet.append_row([number, shelf, datetime.now().strftime("%Y-%m-%d %H:%M"), ""])
             await update.message.reply_text(
                 f"🎉 <b>{number}</b> добавлена на <b>{shelf}</b>!",
                 reply_markup=main_menu_keyboard(),
@@ -228,7 +221,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
 
         else:
-            # ПОИСК
             matches = find_all_springs_by_number(data, text)
             if matches:
                 if len(matches) == 1:
@@ -263,7 +255,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.error(f"Ошибка: {e}")
         await update.message.reply_text("❌ Ошибка. Проверь формат: <code>+123, A1</code>", parse_mode='HTML')
 
-# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🤖 <b>Склад пружин</b>\n\n"
@@ -277,7 +268,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='HTML'
     )
 
-# Обработка кнопок
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -307,14 +297,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ✅ ДОБАВЛЕНИЕ НА ПОЛКУ
     if data.startswith("add_confirm:"):
         parts = data.split(":", 2)
         number = parts[1]
         shelf_code = parts[2]
         shelf = shelf_code.upper()
         
-        sheet.append_row([number, shelf, "", ""])
+        # ✅ ДАТА ДОБАВЛЕНИЯ ПРЯМО при создании строки!
+        sheet.append_row([number, shelf, datetime.now().strftime("%Y-%m-%d %H:%M"), ""])
         row_index = find_last_added_row()
         
         await log_action(context, user.id, user.username, "add_spring", f"Полка: {shelf}", number)
@@ -329,7 +319,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["last_added_number"] = number
         return
 
-    # ✅ УДАЛИТЬ ПОСЛЕДНЮЮ пружину
     if data.startswith("delete_last:"):
         number = data.split(":", 1)[1]
         data_all = sheet.get_all_records()
@@ -359,7 +348,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(summary, reply_markup=main_menu_keyboard(), parse_mode='HTML')
         return
 
-# Запуск
 def main():
     bot_token = os.getenv("BOT_TOKEN")
     if not bot_token:
