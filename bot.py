@@ -104,27 +104,28 @@ def find_last_added_row():
             return i + 1
     return 1
 
-def shelves_keyboard(number):
+def shelves_keyboard(number, mode="add"):
+    """Клавиатура полок с режимом"""
+    prefix = f"{mode}_confirm:{number}:"
     keyboard = [
-        [InlineKeyboardButton("A1", callback_data=f"add_confirm:{number}:a1"), 
-         InlineKeyboardButton("B1", callback_data=f"add_confirm:{number}:b1"), 
-         InlineKeyboardButton("C1", callback_data=f"add_confirm:{number}:c1")],
-        [InlineKeyboardButton("A2", callback_data=f"add_confirm:{number}:a2"), 
-         InlineKeyboardButton("B2", callback_data=f"add_confirm:{number}:b2"), 
-         InlineKeyboardButton("C2", callback_data=f"add_confirm:{number}:c2")],
-        [InlineKeyboardButton("A3", callback_data=f"add_confirm:{number}:a3"), 
-         InlineKeyboardButton("B3", callback_data=f"add_confirm:{number}:b3"), 
-         InlineKeyboardButton("C3", callback_data=f"add_confirm:{number}:c3")],
-        [InlineKeyboardButton("A4", callback_data=f"add_confirm:{number}:a4"), 
-         InlineKeyboardButton("B4", callback_data=f"add_confirm:{number}:b4")],
-        [InlineKeyboardButton("A5", callback_data=f"add_confirm:{number}:a5"), 
-         InlineKeyboardButton("B5", callback_data=f"add_confirm:{number}:b5")],
-        [InlineKeyboardButton("A6", callback_data=f"add_confirm:{number}:a6"), 
-         InlineKeyboardButton("B6", callback_data=f"add_confirm:{number}:b6")],
-        [InlineKeyboardButton("A7", callback_data=f"add_confirm:{number}:a7"), 
-         InlineKeyboardButton("B7", callback_data=f"add_confirm:{number}:b7")],
-        [InlineKeyboardButton("", callback_data="noop"), 
-         InlineKeyboardButton("B8", callback_data=f"add_confirm:{number}:b8")]
+        [InlineKeyboardButton("A1", callback_data=f"{prefix}a1"), 
+         InlineKeyboardButton("B1", callback_data=f"{prefix}b1"), 
+         InlineKeyboardButton("C1", callback_data=f"{prefix}c1")],
+        [InlineKeyboardButton("A2", callback_data=f"{prefix}a2"), 
+         InlineKeyboardButton("B2", callback_data=f"{prefix}b2"), 
+         InlineKeyboardButton("C2", callback_data=f"{prefix}c2")],
+        [InlineKeyboardButton("A3", callback_data=f"{prefix}a3"), 
+         InlineKeyboardButton("B3", callback_data=f"{prefix}b3"), 
+         InlineKeyboardButton("C3", callback_data=f"{prefix}c3")],
+        [InlineKeyboardButton("A4", callback_data=f"{prefix}a4"), 
+         InlineKeyboardButton("B4", callback_data=f"{prefix}b4")],
+        [InlineKeyboardButton("A5", callback_data=f"{prefix}a5"), 
+         InlineKeyboardButton("B5", callback_data=f"{prefix}b5")],
+        [InlineKeyboardButton("A6", callback_data=f"{prefix}a6"), 
+         InlineKeyboardButton("B6", callback_data=f"{prefix}b6")],
+        [InlineKeyboardButton("A7", callback_data=f"{prefix}a7"), 
+         InlineKeyboardButton("B7", callback_data=f"{prefix}b7")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -134,6 +135,32 @@ def main_menu_keyboard():
         [InlineKeyboardButton("📋 Логи", callback_data="logs_mode")]
     ])
 
+def action_keyboard(number):
+    """Клавиатура действий при поиске"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete_select:{number}")],
+        [InlineKeyboardButton("🔄 Переместить", callback_data=f"move_select:{number}")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+    ])
+
+def delete_keyboard(matches, number):
+    """Клавиатура выбора удаления"""
+    buttons = [[InlineKeyboardButton(f"🗑️ стр.{m['row_index']} {m['shelf']}", 
+                                    callback_data=f"del_select:{m['row_index']}:{number}:{m['shelf']}")] 
+               for m in matches[:8]]
+    buttons.append([InlineKeyboardButton("🔙 Назад к поиску", callback_data=f"action_menu:{number}")])
+    buttons.append([InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")])
+    return InlineKeyboardMarkup(buttons)
+
+def move_keyboard(matches, number):
+    """Клавиатура выбора перемещения"""
+    buttons = [[InlineKeyboardButton(f"🔄 стр.{m['row_index']} {m['shelf']} →", 
+                                    callback_data=f"move_row:{m['row_index']}:{number}:{m['shelf']}")] 
+               for m in matches[:8]]
+    buttons.append([InlineKeyboardButton("🔙 Назад к поиску", callback_data=f"action_menu:{number}")])
+    buttons.append([InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")])
+    return InlineKeyboardMarkup(buttons)
+
 def saved_keyboard(number):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🗑️ Удалить эту", callback_data=f"delete_last:{number}")],
@@ -141,7 +168,7 @@ def saved_keyboard(number):
     ])
 
 async def log_action(context, user_id, username, action, details, spring_number):
-    """Правильное логирование БЕЗ лишних двоеточий"""
+    """Правильное логирование"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     username = username or "пользователь"
     log_entry = f"{action}: {details}"
@@ -160,7 +187,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(
             f"✅ <b>Номер:</b> <code>{text}</code>\n\n"
             "📍 <b>Выбери полку:</b>",
-            reply_markup=shelves_keyboard(text),
+            reply_markup=shelves_keyboard(text, "add"),
             parse_mode='HTML'
         )
         return
@@ -169,17 +196,17 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         logs = find_logs_by_number(text)
         if logs:
             response = f"📋 <b>История <code>{text}</code> ({len(logs)} действий):</b>\n\n"
-            for i, log in enumerate(logs[:10], 1):
+            for i, log in enumerate(logs[:5], 1):  # Показываем только 5 последних
                 timestamp = log['timestamp'][:16]
                 response += f"{i}. {timestamp} | <code>{log['username']}</code>\n"
                 response += f"   {log['action']}\n\n"
-            if len(logs) > 10:
-                response += f"... и ещё {len(logs)-10} действий"
+            if len(logs) > 5:
+                response += f"... и ещё {len(logs)-5} действий"
         else:
             response = f"⚠️ Логов для <code>{text}</code> не найдено."
         
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🏠 Меню", callback_data="main_menu")]
+            [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
         ])
         await update.message.reply_text(response, reply_markup=keyboard, parse_mode='HTML')
         context.user_data.clear()
@@ -233,6 +260,12 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         else:
             matches = find_all_springs_by_number(text)
+            # ✅ ПРОСТОЕ логирование поиска - кто последний искал
+            if matches:
+                await log_action(context, user.id, user.username, "🔍 искал", "", text)
+            else:
+                await log_action(context, user.id, user.username, "🔍 искал", "Не найдено", text)
+            
             if matches:
                 if len(matches) == 1:
                     match = matches[0]
@@ -241,11 +274,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                         f"📍 <b>Полка:</b> <b>{match['shelf']}</b>\n"
                         f"📅 <b>Добавлена:</b> {match['add_date']}"
                     )
-                    keyboard = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete_select:{text}")],
-                        [InlineKeyboardButton("🔄 Переместить", callback_data=f"move_select:{text}")],
-                        [InlineKeyboardButton("🏠 Меню", callback_data="main_menu")]
-                    ])
+                    keyboard = action_keyboard(text)
                 else:
                     response = f"🔍 <b>Найдено <code>{len(matches)}</code> пружин <code>{text}</code>:</b>\n\n"
                     for i, match in enumerate(matches, 1):
@@ -253,11 +282,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                             f"{i}. <b>стр.{match['row_index']} {match['shelf']}</b>\n"
                             f"   📅 {match['add_date']}\n\n"
                         )
-                    keyboard = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete_select:{text}")],
-                        [InlineKeyboardButton("🔄 Переместить", callback_data=f"move_select:{text}")],
-                        [InlineKeyboardButton("🏠 Меню", callback_data="main_menu")]
-                    ])
+                    keyboard = action_keyboard(text)
+                
                 await update.message.reply_text(response, reply_markup=keyboard, parse_mode='HTML')
             else:
                 await update.message.reply_text("⚠️ Пружина не найдена.", reply_markup=main_menu_keyboard())
@@ -272,7 +298,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📋 <b>Быстрые команды:</b>\n"
         "• <code>+123, A1</code> — добавить\n"
         "• <code>-123</code> — удалить все\n"
-        "• <code>=123, B2</code> — переместить\n"
+        "• <code>=123, B2</code> — переместить все\n"
         "• <code>123</code> — найти\n\n"
         "🎮 Используй кнопки ниже!",
         reply_markup=main_menu_keyboard(),
@@ -302,7 +328,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📋 <b>Режим логов</b>\n\n"
             "📝 Впиши номер пружины для просмотра истории:\n\n"
             "Пример: <code>123</code>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Меню", callback_data="main_menu")]]),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]]),
             parse_mode='HTML'
         )
         return
@@ -320,15 +346,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if data.startswith("add_confirm:"):
+    # Обработка добавления/перемещения
+    if data.startswith("add_confirm:") or data.startswith("move_confirm:"):
         parts = data.split(":", 2)
         number = parts[1]
         shelf_code = parts[2]
         shelf = shelf_code.upper()
         
-        # ✅ Проверяем режим перемещения
         if context.user_data.get("move_row_index"):
-            # Это перемещение - МЕНЯЕМ существующую строку
+            # Перемещение
             row_index = context.user_data["move_row_index"]
             old_shelf = context.user_data["move_old_shelf"]
             sheet.update_cell(row_index, 2, shelf)
@@ -341,7 +367,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             context.user_data.clear()
         else:
-            # Обычное добавление
+            # Добавление
             sheet.append_row([number, shelf, datetime.now().strftime("%Y-%m-%d %H:%M")])
             row_index = find_last_added_row()
             await log_action(context, user.id, user.username, "➕ добавление", f"Полка: {shelf}", number)
@@ -363,11 +389,31 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             sheet.delete_rows(row_index)
             await log_action(context, user.id, user.username, "🗑️ удаление", f"Полка: {shelf}", number)
             await query.edit_message_text(
-                f"🗑️ <b>{number}</b> (стр. {row_index}) удалена!\n\n"
-                f"📝 Пиши следующий номер:",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Выход", callback_data="exit_add_mode")]]),
+                f"🗑️ <b>{number}</b> (стр. {row_index}) удалена!",
+                reply_markup=main_menu_keyboard(),
                 parse_mode='HTML'
             )
+        return
+
+    # Улучшенная навигация
+    if data.startswith("action_menu:"):
+        number = data.split(":", 1)[1]
+        matches = find_all_springs_by_number(number)
+        if len(matches) == 1:
+            match = matches[0]
+            response = (
+                f"🔍 <b>Пружина <code>{number}</code></b> (стр. {match['row_index']})\n\n"
+                f"📍 <b>Полка:</b> <b>{match['shelf']}</b>\n"
+                f"📅 <b>Добавлена:</b> {match['add_date']}"
+            )
+        else:
+            response = f"🔍 <b>Найдено <code>{len(matches)}</code> пружин <code>{number}</code>:</b>\n\n"
+            for i, match in enumerate(matches, 1):
+                response += (
+                    f"{i}. <b>стр.{match['row_index']} {match['shelf']}</b>\n"
+                    f"   📅 {match['add_date']}\n\n"
+                )
+        await query.edit_message_text(response, reply_markup=action_keyboard(number), parse_mode='HTML')
         return
 
     if data.startswith("delete_select:"):
@@ -376,10 +422,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if matches:
             await query.edit_message_text(
                 f"🗑️ <b>Выбери строку для удаления <code>{number}</code>:</b>",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"🗑️ стр.{m['row_index']} {m['shelf']}", 
-                                        callback_data=f"del_select:{m['row_index']}:{number}:{m['shelf']}")] for m in matches[:8]
-                ] + [[InlineKeyboardButton("🏠 Меню", callback_data="main_menu")]]),
+                reply_markup=delete_keyboard(matches, number),
                 parse_mode='HTML'
             )
         return
@@ -390,10 +433,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if matches:
             await query.edit_message_text(
                 f"🔄 <b>Выбери строку для перемещения <code>{number}</code>:</b>",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"🔄 стр.{m['row_index']} {m['shelf']} →", 
-                                        callback_data=f"move_row:{m['row_index']}:{number}:{m['shelf']}")] for m in matches[:8]
-                ] + [[InlineKeyboardButton("🏠 Меню", callback_data="main_menu")]]),
+                reply_markup=move_keyboard(matches, number),
                 parse_mode='HTML'
             )
         return
@@ -428,7 +468,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await query.edit_message_text(
             f"🔄 <b>{number}</b> (стр. {row_index}, {old_shelf}) → <b>выбери новую полку:</b>",
-            reply_markup=shelves_keyboard(number),
+            reply_markup=shelves_keyboard(number, "move"),
             parse_mode='HTML'
         )
         return
