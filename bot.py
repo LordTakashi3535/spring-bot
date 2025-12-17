@@ -86,7 +86,6 @@ async def log_action(context, user_id, username, action_type, details="", spring
     
     try:
         logs_sheet.append_row(row)
-        # ✅ Обновляем ТОЛЬКО конкретную строку по row_index!
         if row_index:
             update_last_action_by_row(row_index, f"{ACTION_RU.get(action_type, action_type)} ({username})")
     except Exception as e:
@@ -112,10 +111,14 @@ def find_all_springs_by_number(data, number):
             })
     return matches
 
+# ✅ ИСПРАВЛЕННАЯ функция - находит ТОЧНУЮ последнюю строку!
 def find_last_added_row():
-    """Находит последнюю добавленную строку"""
-    data = sheet.get_all_records()
-    return len(data)
+    """Возвращает номер последней строки с пружиной"""
+    all_values = sheet.get_all_values()
+    for i in range(len(all_values)-1, 0, -1):
+        if all_values[i] and all_values[i][0]:  # Строка не пустая И номер есть
+            return i + 1
+    return 1
 
 # Клавиатура ПОСЛЕ сохранения
 def saved_keyboard(number):
@@ -362,5 +365,5 @@ def main():
     logger.info("🤖 Бот склада пружин запущен! 🚀")
     app.run_polling()
 
-if __name__ == "__main__":  # ← ТОЛЬКО ЭТА СТРОКА ИСПРАВЛЕНА!
+if __name__ == "__main__":
     main()
