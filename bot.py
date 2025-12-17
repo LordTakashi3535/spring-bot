@@ -18,7 +18,8 @@ from google.oauth2.service_account import Credentials
 
 # Логирование
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", 
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
@@ -96,21 +97,22 @@ async def log_action(context, user_id, username, action_type, details="", spring
 def update_last_action(spring_number, action_text):
     """Обновляет колонку D"""
     data = sheet.get_all_records()
-    for i, row in enumerate(data):
+    for i, row in enumerate(data[1:], 1):  # Пропускаем заголовки
         if str(row.get("Номер", "")) == spring_number:
-            row_index = i + 2
+            row_index = i + 1
             if not sheet.cell(row_index, 3).value:
                 sheet.update_cell(row_index, 3, datetime.now().strftime("%Y-%m-%d %H:%M"))
             sheet.update_cell(row_index, 4, action_text)
             break
 
 def find_all_springs_by_number(data, number):
-    """Находит все пружины по номеру"""
+    """Находит все пружины по номеру - ПРОПУСКАЕТ ЗАГОЛОВКИ"""
     matches = []
-    for i, row in enumerate(data):
+    # ✅ ПРОПУСКАЕМ ПЕРВУЮ СТРОКУ (заголовки)
+    for i, row in enumerate(data[1:], 1):
         if str(row.get("Номер", "")) == number:
             matches.append({
-                'row_index': i + 2,
+                'row_index': i + 1,  # Реальный номер строки
                 'shelf': row.get('Полка', '❓'),
                 'add_date': format_date(row.get('Дата добавления', '')),
                 'last_action': row.get('Последнее действие', '❓')
@@ -122,7 +124,7 @@ def find_last_added_row():
     data = sheet.get_all_records()
     return len(data)
 
-# ✅ ПРОСТАЯ клавиатура ПОСЛЕ сохранения - ТОЛЬКО УДАЛИТЬ
+# Клавиатура ПОСЛЕ сохранения - ТОЛЬКО УДАЛИТЬ
 def saved_keyboard(number):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🗑️ Удалить эту", callback_data=f"delete_last:{number}")],
@@ -132,14 +134,25 @@ def saved_keyboard(number):
 # Клавиатура полок для ДОБАВЛЕНИЯ
 def shelves_keyboard(number):
     keyboard = [
-        [InlineKeyboardButton("A1", callback_data=f"add_confirm:{number}:a1"), InlineKeyboardButton("B1", callback_data=f"add_confirm:{number}:b1"), InlineKeyboardButton("C1", callback_data=f"add_confirm:{number}:c1")],
-        [InlineKeyboardButton("A2", callback_data=f"add_confirm:{number}:a2"), InlineKeyboardButton("B2", callback_data=f"add_confirm:{number}:b2"), InlineKeyboardButton("C2", callback_data=f"add_confirm:{number}:c2")],
-        [InlineKeyboardButton("A3", callback_data=f"add_confirm:{number}:a3"), InlineKeyboardButton("B3", callback_data=f"add_confirm:{number}:b3"), InlineKeyboardButton("C3", callback_data=f"add_confirm:{number}:c3")],
-        [InlineKeyboardButton("A4", callback_data=f"add_confirm:{number}:a4"), InlineKeyboardButton("B4", callback_data=f"add_confirm:{number}:b4")],
-        [InlineKeyboardButton("A5", callback_data=f"add_confirm:{number}:a5"), InlineKeyboardButton("B5", callback_data=f"add_confirm:{number}:b5")],
-        [InlineKeyboardButton("A6", callback_data=f"add_confirm:{number}:a6"), InlineKeyboardButton("B6", callback_data=f"add_confirm:{number}:b6")],
-        [InlineKeyboardButton("A7", callback_data=f"add_confirm:{number}:a7"), InlineKeyboardButton("B7", callback_data=f"add_confirm:{number}:b7")],
-        [InlineKeyboardButton("", callback_data="noop"), InlineKeyboardButton("B8", callback_data=f"add_confirm:{number}:b8")]
+        [InlineKeyboardButton("A1", callback_data=f"add_confirm:{number}:a1"), 
+         InlineKeyboardButton("B1", callback_data=f"add_confirm:{number}:b1"), 
+         InlineKeyboardButton("C1", callback_data=f"add_confirm:{number}:c1")],
+        [InlineKeyboardButton("A2", callback_data=f"add_confirm:{number}:a2"), 
+         InlineKeyboardButton("B2", callback_data=f"add_confirm:{number}:b2"), 
+         InlineKeyboardButton("C2", callback_data=f"add_confirm:{number}:c2")],
+        [InlineKeyboardButton("A3", callback_data=f"add_confirm:{number}:a3"), 
+         InlineKeyboardButton("B3", callback_data=f"add_confirm:{number}:b3"), 
+         InlineKeyboardButton("C3", callback_data=f"add_confirm:{number}:c3")],
+        [InlineKeyboardButton("A4", callback_data=f"add_confirm:{number}:a4"), 
+         InlineKeyboardButton("B4", callback_data=f"add_confirm:{number}:b4")],
+        [InlineKeyboardButton("A5", callback_data=f"add_confirm:{number}:a5"), 
+         InlineKeyboardButton("B5", callback_data=f"add_confirm:{number}:b5")],
+        [InlineKeyboardButton("A6", callback_data=f"add_confirm:{number}:a6"), 
+         InlineKeyboardButton("B6", callback_data=f"add_confirm:{number}:b6")],
+        [InlineKeyboardButton("A7", callback_data=f"add_confirm:{number}:a7"), 
+         InlineKeyboardButton("B7", callback_data=f"add_confirm:{number}:b7")],
+        [InlineKeyboardButton("", callback_data="noop"), 
+         InlineKeyboardButton("B8", callback_data=f"add_confirm:{number}:b8")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -155,9 +168,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     text = update.message.text.strip()
     user = update.effective_user
     
-    # ✅ ПРОВЕРКА РЕЖИМА МАССОВОГО ДОБАВЛЕНИЯ
+    # ✅ ПРОВЕРКА РЕЖИМА МАССОВОГО ДОБАВЛЕНИЯ (приоритет №1)
     if context.user_data.get("add_mode"):
-        # Любой текст = новый номер пружины
         context.user_data["current_number"] = text
         await update.message.reply_text(
             f"✅ <b>Номер:</b> <code>{text}</code>\n\n"
