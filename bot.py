@@ -44,13 +44,13 @@ spreadsheet = client.open_by_url(
 sheet = spreadsheet.sheet1
 logs_sheet = spreadsheet.worksheet("Logs")
 
-# Инициализация структуры
+# Инициализация структуры (ПРОСТЫЕ НАЗВАНИЯ)
 def init_sheet():
     try:
-        sheet.update('A1', '🔢 Номер')
-        sheet.update('B1', '📍 Полка') 
-        sheet.update('C1', '📅 Дата добавления')
-        sheet.update('D1', '🔍 Последнее действие')
+        sheet.update('A1', 'Номер')
+        sheet.update('B1', 'Полка')
+        sheet.update('C1', 'Дата добавления')
+        sheet.update('D1', 'Последнее действие')
     except:
         pass
 
@@ -60,7 +60,7 @@ init_sheet()
 ACTION_RU = {
     "add_spring": "➕ добавление",
     "delete_spring": "🗑️ удаление",
-    "move_spring": "🔄 перемещение", 
+    "move_spring": "🔄 перемещение",
     "search": "🔍 поиск",
     "delete_all_springs": "🗑️ удалить все",
     "delete_specific_spring": "🗑️ удалить одну"
@@ -68,13 +68,16 @@ ACTION_RU = {
 
 def format_date(date_str):
     """Форматирует дату ДД.ММ.ГГГГ"""
-    if not date_str or date_str == 'Неизвестно':
+    if not date_str or date_str == '':
         return '❓ нет даты'
     try:
         dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
         return dt.strftime("%d.%m.%Y %H:%M")
     except:
-        return date_str[:10]
+        try:
+            return date_str[:10]
+        except:
+            return '❓ нет даты'
 
 # Запись лога
 async def log_action(context, user_id, username, action_type, details="", spring_number=None):
@@ -94,24 +97,25 @@ def update_last_action(spring_number, action_text):
     """Обновляет колонку D"""
     data = sheet.get_all_records()
     for i, row in enumerate(data):
-        if str(row.get("🔢 Номер", "")) == spring_number:
+        if str(row.get("Номер", "")) == spring_number:
             row_index = i + 2
-            # Дата добавления если пустая
-            if not row.get('📅 Дата добавления'):
+            # Дата добавления если пустая (колонка C)
+            if not sheet.cell(row_index, 3).value:
                 sheet.update_cell(row_index, 3, datetime.now().strftime("%Y-%m-%d %H:%M"))
-            # Последнее действие
+            # Последнее действие (колонка D)
             sheet.update_cell(row_index, 4, action_text)
+            break
 
 def find_all_springs_by_number(data, number):
     """Находит все пружины по номеру"""
     matches = []
     for i, row in enumerate(data):
-        if str(row.get("🔢 Номер", "")) == number:
+        if str(row.get("Номер", "")) == number:
             matches.append({
                 'row_index': i + 2,
-                'shelf': row.get('📍 Полка', '❓'),
-                'add_date': format_date(row.get('📅 Дата добавления', '')),
-                'last_action': row.get('🔍 Последнее действие', '❓')
+                'shelf': row.get('Полка', '❓'),
+                'add_date': format_date(row.get('Дата добавления', '')),
+                'last_action': row.get('Последнее действие', '❓')
             })
     return matches
 
@@ -292,7 +296,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         summary = f"📊 <b>Всего: {len(data_all)-1} пружин</b>\n\n"
         for row in data_all[1:6]:
-            summary += f"• <code>{row.get('🔢 Номер', '?')}</code> → {row.get('📍 Полка', '?')}\n"
+            summary += f"• <code>{row.get('Номер', '?')}</code> → {row.get('Полка', '?')}\n"
         if len(data_all) > 6:
             summary += f"\n... и ещё {len(data_all)-6}"
         await query.edit_message_text(summary, reply_markup=main_menu_keyboard(), parse_mode='HTML')
@@ -406,6 +410,18 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             context.user_data.clear()
         return
+
+    if data.startswith("delete:"):
+        number = data.split(":", 1)[1]
+        data_all = sheet.get_all_records()
+        matches = find_all_springs_by_number(data_all, number)
+        if matches:
+            for match in matches:
+                sheet.delete_rows(match['row_index'])
+            await log_action(context, user.id, user.username, "delete_spring", f"Количество: {len(matches)}", number)
+            await query.edit_message_text(f"🗑️ <b>Удалено {len(matches)} пружин</b> {number}", reply_markup=main_menu_keyboard(), parse_mode='HTML')
+        else:
+            await query.edit_message_text("⚠️ Пружина не найдена.", reply_markup=main_menu_keyboard())
 
 # Запуск
 def main():
