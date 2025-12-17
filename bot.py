@@ -239,7 +239,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                         [InlineKeyboardButton("🏠 Меню", callback_data="main_menu")]
                     ])
                 else:
-                    # ✅ КРАСИВОЕ оформление для нескольких пружин
                     response = f"🔍 <b>Найдено <code>{len(matches)}</code> пружин <code>{text}</code>:</b>\n\n"
                     for i, match in enumerate(matches, 1):
                         action_date = match['action_date'] if match['action_date'] != '❓ нет даты' else ''
@@ -356,16 +355,22 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
+    # ✅ ИСПРАВЛЕНО: полная очистка колонки D и E при удалении
     if data.startswith("del_select:"):
         parts = data.split(":", 2)
         row_index = int(parts[1])
         number = parts[2]
         
         try:
-            sheet.delete_rows(row_index)
+            # ✅ ЛОГИРУЕМ удаление ПЕРЕД удалением строки
             await log_action(context, user.id, user.username, "delete_specific_spring", f"Строка: {row_index}", number, row_index)
+            
+            # ✅ УДАЛЯЕМ строку полностью
+            sheet.delete_rows(row_index)
+            
             await query.edit_message_text(
-                f"✅ <b>{number}</b> (стр. {row_index}) удалена!",
+                f"✅ <b>{number}</b> (стр. {row_index}) <b>ПОЛНОСТЬЮ удалена!</b>\n"
+                f"🔍 Действие и дата очищены.",
                 reply_markup=main_menu_keyboard(),
                 parse_mode='HTML'
             )
