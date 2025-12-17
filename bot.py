@@ -77,8 +77,8 @@ def format_date(date_str):
         except:
             return '❓ нет даты'
 
-# ✅ НОВЫЙ формат записи лога - БЕЗ изменения даты добавления
-async def log_action(context, user_id, username, action_type, details="", spring_number=None):
+# ✅ ИСПРАВЛЕННАЯ функция лога с row_index
+async def log_action(context, user_id, username, action_type, details="", spring_number=None, row_index=None):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     username = username or "пользователь"
     log_entry = f"{ACTION_RU.get(action_type, action_type)}: {details}"
@@ -86,23 +86,21 @@ async def log_action(context, user_id, username, action_type, details="", spring
     
     try:
         logs_sheet.append_row(row)
-        # ✅ ТОЛЬКО обновляем "Последнее действие" - НЕ трогаем дату добавления!
-        if spring_number:
-            update_last_action_only(spring_number, f"{ACTION_RU.get(action_type, action_type)} ({username})")
+        # ✅ Обновляем ТОЛЬКО конкретную строку по row_index!
+        if row_index:
+            update_last_action_by_row(row_index, f"{ACTION_RU.get(action_type, action_type)} ({username})")
     except Exception as e:
         logger.error(f"Ошибка лога: {e}")
 
-def update_last_action_only(spring_number, action_text):
-    """Обновляет ТОЛЬКО колонку D (Последнее действие)"""
-    data = sheet.get_all_records()
-    for i, row in enumerate(data[1:], 1):  # Пропускаем заголовки
-        if str(row.get("Номер", "")) == spring_number:
-            row_index = i + 1
-            sheet.update_cell(row_index, 4, action_text)  # ✅ ТОЛЬКО колонка D!
-            break
+def update_last_action_by_row(row_index, action_text):
+    """Обновляет ТОЛЬКО колонку D по номеру строки"""
+    try:
+        sheet.update_cell(row_index, 4, action_text)
+    except Exception as e:
+        logger.error(f"Ошибка обновления строки {row_index}: {e}")
 
 def find_all_springs_by_number(data, number):
-    """Находит все пружины по номеру - ПРОПУСКАЕТ ЗАГОЛОВКИ"""
+    """Находит все пружины по номеру"""
     matches = []
     for i, row in enumerate(data[1:], 1):
         if str(row.get("Номер", "")) == number:
@@ -177,14 +175,14 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         if text.startswith("+"):
             content = text[1:].strip()
             number, shelf = [x.strip() for x in content.split(",")]
-            # ✅ ДАТА ДОБАВЛЕНИЯ ПРЯМО при создании!
             sheet.append_row([number, shelf, datetime.now().strftime("%Y-%m-%d %H:%M"), ""])
+            row_index = find_last_added_row()
+            await log_action(context, user.id, user.username, "add_spring", f"Полка: {shelf}", number, row_index)
             await update.message.reply_text(
                 f"🎉 <b>{number}</b> добавлена на <b>{shelf}</b>!",
                 reply_markup=main_menu_keyboard(),
                 parse_mode='HTML'
             )
-            await log_action(context, user.id, user.username, "add_spring", f"Полка: {shelf}", number)
             return
 
         elif text.startswith("-"):
@@ -303,11 +301,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         shelf_code = parts[2]
         shelf = shelf_code.upper()
         
-        # ✅ ДАТА ДОБАВЛЕНИЯ ПРЯМО при создании строки!
+        # ✅ Добавляем с датой и получаем row_index
         sheet.append_row([number, shelf, datetime.now().strftime("%Y-%m-%d %H:%M"), ""])
         row_index = find_last_added_row()
         
-        await log_action(context, user.id, user.username, "add_spring", f"Полка: {shelf}", number)
+        # ✅ Лог с row_index!
+        await log_action(context, user.id, user.username, "add_spring", f"Полка: {shelf}", number, row_index)
         
         await query.edit_message_text(
             f"✅ <b>{number}</b> сохранена на <b>{shelf}</b> (стр. {row_index})!\n\n"
@@ -325,10 +324,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         matches = find_all_springs_by_number(data_all, number)
         if matches:
             last_match = matches[-1]
-            sheet.delete_rows(last_match['row_index'])
-            await log_action(context, user.id, user.username, "delete_specific_spring", f"Строка: {last_match['row_index']}", number)
+            row_index = last_match['row_index']
+            sheet.delete_rows(row_index)
+            await log_action(context, user.id, user.username, "delete_specific_spring", f"Строка: {row_index}", number, row_index)
             await query.edit_message_text(
-                f"🗑️ <b>{number}</b> (стр. {last_match['row_index']}) удалена!\n\n"
+                f"🗑️ <b>{number}</b> (стр. {row_index}) удалена!\n\n"
                 f"📝 Пиши следующий номер:",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Выход", callback_data="exit_add_mode")]]),
                 parse_mode='HTML'
@@ -362,5 +362,5 @@ def main():
     logger.info("🤖 Бот склада пружин запущен! 🚀")
     app.run_polling()
 
-if __name__ == "__main__":
+if __name__ == "____main__":
     main()
