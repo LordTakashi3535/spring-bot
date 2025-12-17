@@ -121,7 +121,7 @@ def find_all_springs_by_number(data, number):
 def find_last_added_row():
     """Находит последнюю добавленную строку"""
     data = sheet.get_all_records()
-    return len(data)  # Последняя строка
+    return len(data)
 
 # Клавиатура полок с возможностью редактирования
 def shelves_keyboard(number):
@@ -148,6 +148,39 @@ def main_menu_keyboard():
         [InlineKeyboardButton("🔍 Поиск", callback_data="quick_search")]
     ])
 
+# ✅ НОВЫЙ обработчик редактирования номера ПОСЛЕ добавления
+async def handle_edit_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка нового номера при редактировании после добавления"""
+    if not context.user_data.get("waiting_new_number"):
+        return False  # Не режим редактирования
+    
+    text = update.message.text.strip()
+    user = update.effective_user
+    
+    old_number = context.user_data["waiting_new_number"]
+    new_number = text
+    
+    data_all = sheet.get_all_records()
+    matches = find_all_springs_by_number(data_all, old_number)
+    if matches:
+        # Берем последнюю добавленную пружину
+        last_match = matches[-1]
+        sheet.update_cell(last_match['row_index'], 1, new_number)
+        await log_action(context, user.id, user.username, "edit_number", f"Старый: {old_number} → {new_number}", new_number)
+        
+        await update.message.reply_text(
+            f"✏️ <b>{old_number}</b> → <b>{new_number}</b> (стр. {last_match['row_index']})!\n\n"
+            f"📝 Пиши следующий номер пружины:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Выход", callback_data="exit_add_mode")]]),
+            parse_mode='HTML'
+        )
+        context.user_data["current_number"] = new_number  # Обновляем текущий номер
+    else:
+        await update.message.reply_text("⚠️ Пружина не найдена для редактирования.")
+    
+    context.user_data.pop("waiting_new_number")
+    return True  # Обработано
+
 # /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -164,6 +197,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Обработка текста
 async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ✅ ПРОВЕРКА РЕЖИМА РЕДАКТИРОВАНИЯ ПЕРВЫМ ДЕЛОМ
+    if await handle_edit_number(update, context):
+        return
+        
     text = update.message.text.strip()
     user = update.effective_user
     data = sheet.get_all_records()
@@ -185,7 +222,7 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Обычные команды (как раньше)
+    # Обычные команды
     try:
         if text.startswith("+"):
             content = text[1:].strip()
@@ -320,7 +357,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["last_added_number"] = number
         return
 
-    # ✅ ИЗМЕНИТЬ НОМЕР пружины (только что добавленной)
+    # ✅ ИЗМЕНИТЬ НОМЕР пружины (ПОСЛЕ добавления)
     if data.startswith("edit_number:"):
         number = data.split(":", 1)[1]
         await query.edit_message_text(
@@ -361,28 +398,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Обработка нового номера при редактировании
-    if context.user_data.get("waiting_new_number"):
-        old_number = context.user_data["waiting_new_number"]
-        new_number = text
-        
-        data_all = sheet.get_all_records()
-        matches = find_all_springs_by_number(data_all, old_number)
-        if matches:
-            last_match = matches[-1]  # Последняя добавленная
-            sheet.update_cell(last_match['row_index'], 1, new_number)
-            await log_action(context, user.id, user.username, "edit_number", f"Старый: {old_number}", new_number)
-            
-            await update.message.reply_text(
-                f"✏️ <b>{old_number}</b> → <b>{new_number}</b> (стр. {last_match['row_index']})!\n\n"
-                "📝 Пиши следующий номер:",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Выход", callback_data="exit_add_mode")]]),
-                parse_mode='HTML'
-            )
-            context.user_data.pop("waiting_new_number")
-        return
-
-    # Остальные обработчики (поиск, удаление, редактирование) - как раньше
     if data == "show_all":
         data_all = sheet.get_all_records()
         if len(data_all) <= 1:
@@ -396,8 +411,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(summary, reply_markup=main_menu_keyboard(), parse_mode='HTML')
         return
 
-    # ... (остальные обработчики delete_all, delete_one, edit_select и т.д. как в предыдущей версии)
-
 # Запуск
 def main():
     bot_token = os.getenv("BOT_TOKEN")
@@ -407,7 +420,13 @@ def main():
 
     app = ApplicationBuilder().token(bot_token).build()
     app.add_handler(CommandHandler("start", start))
+    
+    # ✅ ПОРЯДОК ОБРАБОТЧИКОВ ВАЖЕН!
+    # 1. Сначала редактирование номера
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_number))
+    # 2. Потом основной обработчик
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
+    
     app.add_handler(CallbackQueryHandler(callback_handler))
 
     logger.info("🤖 Бот склада пружин запущен! 🚀")
